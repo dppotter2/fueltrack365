@@ -65,8 +65,7 @@ export async function POST(req: NextRequest) {
     const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
     const vDay = viewDateObj.getDate()
-    const vSuf = [11,12,13].includes(vDay)?'th':vDay%10===1?'st':vDay%10===2?'nd':vDay%10===3?'rd':'th'
-    const fullDateStr = dayNames[viewDateObj.getDay()]+', '+monthNames[viewDateObj.getMonth()]+' '+vDay+vSuf+' '+date
+    const fullDateStr = dayNames[viewDateObj.getDay()]+', '+monthNames[viewDateObj.getMonth()]+' '+vDay+' '+date
     const todayStr = new Date().toISOString().split('T')[0]
     const isViewingToday = date === todayStr
     const isViewingYesterday = date === new Date(new Date().setDate(new Date().getDate()-1)).toISOString().split('T')[0]
