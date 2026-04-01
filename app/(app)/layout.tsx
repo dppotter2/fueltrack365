@@ -279,18 +279,24 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
 
   const handleLogFood=async(data:any)=>{
     if(!user) return null
-    const date=localDate()
-    const existing=todayEntries.find(e=>e.name.toLowerCase()===(data.name||'').toLowerCase()&&e.category===(data.category||'food'))
-    if(existing){
-      const updated={calories:(existing.calories||0)+(data.calories||0),protein:(existing.protein||0)+(data.protein||0),carbs:(existing.carbs||0)+(data.carbs||0),fat:(existing.fat||0)+(data.fat||0),fiber:(existing.fiber||0)+(data.fiber||0),sodium:(existing.sodium||0)+(data.sodium||0)}
-      const newServing=existing.serving!==data.serving?existing.serving+' + '+data.serving:existing.serving
-      await supabase.from('food_entries').update({...updated,serving:newServing}).eq('id',existing.id).eq('user_id',user.id)
-      return existing.id
-    } else {
-      const res=await fetch('/api/log-food',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,date})})
-      const json=await res.json()
-      return json.entry?.id||null
+    // Use date from logData (set by chat API to viewing date) or fall back to viewingDate
+    const logDate=data.date||viewingDate||localDate()
+    const isLoggingToday=logDate===localDate()
+    
+    // Tally only works for today's entries (we have them in state)
+    if(isLoggingToday) {
+      const existing=todayEntries.find(e=>e.name.toLowerCase()===(data.name||'').toLowerCase()&&e.category===(data.category||'food'))
+      if(existing){
+        const updated={calories:(existing.calories||0)+(data.calories||0),protein:(existing.protein||0)+(data.protein||0),carbs:(existing.carbs||0)+(data.carbs||0),fat:(existing.fat||0)+(data.fat||0),fiber:(existing.fiber||0)+(data.fiber||0),sodium:(existing.sodium||0)+(data.sodium||0)}
+        const newServing=existing.serving!==data.serving?existing.serving+' + '+data.serving:existing.serving
+        await supabase.from('food_entries').update({...updated,serving:newServing}).eq('id',existing.id).eq('user_id',user.id)
+        return existing.id
+      }
     }
+    // Always insert with the correct date
+    const res=await fetch('/api/log-food',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,date:logDate})})
+    const json=await res.json()
+    return json.entry?.id||null
   }
 
   if(!user) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:DARK,color:MUTED,fontSize:14}}>Loading...</div>
