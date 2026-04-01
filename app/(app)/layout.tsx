@@ -1,14 +1,12 @@
 'use client'
-
 export const dynamic = 'force-dynamic'
-
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { DEFAULT_GOALS, MacroGoals, MacroTotals, ChatMessage, FoodEntry } from '@/lib/types'
 
 const GOLD='#d4a017',DARK='#0d1117',SURFACE='#161b22',SURFACE2='#21262d'
-const BORDER='#30363d',TEXT='#f0f0f0',MUTED='#888'
+const BORDER='#30363d',TEXT='#f0f0f0',MUTED='#8b949e'
 const GREEN='#10b981',BLUE='#3b82f6',ORANGE='#f59e0b',RED='#ef4444',PURPLE='#8b5cf6'
 
 function localDate() {
@@ -18,9 +16,9 @@ function localDate() {
 function fmtDateTime(d: Date) {
   const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
   const months=['January','February','March','April','May','June','July','August','September','October','November','December']
-  const day=d.getDate(),suf=[11,12,13].includes(day)?'th':day%10===1?'st':day%10===2?'nd':day%10===3?'rd':'th'
-  const h=d.getHours(),m=String(d.getMinutes()).padStart(2,'0')
-  return days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf+'  '+(h%12||12)+':'+m+' '+(h>=12?'PM':'AM')
+  const day=d.getDate()
+  const h=String(d.getHours()).padStart(2,'0'), m=String(d.getMinutes()).padStart(2,'0')
+  return days[d.getDay()]+', '+months[d.getMonth()]+' '+day+'  '+h+':'+m
 }
 
 function MacroRing({label,value,goal,color,unit='g'}:{label:string;value:number;goal:number;color:string;unit?:string}) {
@@ -77,15 +75,19 @@ function MsgContent({text,isUser}:{text:string;isUser:boolean}) {
         const raw=bullet?line.trim().replace(/^[•\-\*] /,''):line
         const parts=raw.split(/(\*\*[^*]+\*\*)/g)
         const rendered=parts.map((p,j)=>p.startsWith('**')&&p.endsWith('**')?<strong key={j} style={{color:GOLD}}>{p.slice(2,-2)}</strong>:<span key={j}>{p}</span>)
-        return bullet?<div key={i} style={{display:'flex',gap:7,marginBottom:2}}><span style={{color:GOLD,flexShrink:0}}>&bull;</span><span>{rendered}</span></div>:<div key={i}>{rendered}</div>
+        return bullet
+          ?<div key={i} style={{display:'flex',gap:7,marginBottom:2}}><span style={{color:GOLD,flexShrink:0}}>&bull;</span><span>{rendered}</span></div>
+          :<div key={i}>{rendered}</div>
       })}
     </div>
   )
 }
 
-function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,onLogFood,onRefresh}:{
+// ClaudeChat receives onLogFood as a REF so send() always calls the latest version
+// This prevents stale closure bugs where old user/viewingDate state is captured
+function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,onLogFoodRef,onRefresh}:{
   todayEntries:FoodEntry[];recentEntries:FoodEntry[];totals:MacroTotals;goals:MacroGoals
-  date:string;currentPage:string;onLogFood:(d:any)=>Promise<any>;onRefresh:()=>void
+  date:string;currentPage:string;onLogFoodRef:React.MutableRefObject<(d:any)=>Promise<any>>;onRefresh:()=>void
 }) {
   const supabase=createClient()
   const [open,setOpen]=useState(false)
@@ -95,6 +97,8 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
   const [historyLoaded,setHistoryLoaded]=useState(false)
   const bottomRef=useRef<HTMLDivElement>(null)
   const inputRef=useRef<HTMLTextAreaElement>(null)
+  const onRefreshRef=useRef(onRefresh)
+  useEffect(()=>{ onRefreshRef.current=onRefresh },[onRefresh])
 
   useEffect(()=>{
     if(!open||historyLoaded) return
@@ -103,7 +107,7 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
       if(!user) return
       const {data}=await supabase.from('chat_messages').select('role,content').eq('user_id',user.id).order('created_at',{ascending:true}).limit(60)
       if(data&&data.length>0) setMessages(data as ChatMessage[])
-      else setMessages([{role:'assistant',content:"Hey Patrick. Talk to me:\n\n**\"4 scoops strawberry kaged\"** — logged instantly\n**\"What should I eat?\"** — meal ideas based on what\'s left\n**\"Make me a Thai chicken recipe\"** — full recipe with macros\n**\"How am I doing?\"** — today\'s breakdown\n\nWhat\'s up?"}])
+      else setMessages([{role:'assistant',content:"Hey Patrick. Talk to me:\n\n**\"4 scoops strawberry kaged\"** — logged instantly\n**\"What should I eat?\"** — meal ideas\n**\"Make me a Thai chicken recipe\"** — full recipe\n**\"How am I doing?\"** — today\'s breakdown\n\nWhat\'s up?"}])
       setHistoryLoaded(true)
     })()
   },[open])
@@ -112,6 +116,7 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
 
   const resize=()=>{ if(inputRef.current){inputRef.current.style.height='auto';inputRef.current.style.height=Math.min(inputRef.current.scrollHeight,110)+'px'} }
 
+  // send uses refs for onLogFood and onRefresh — never stale
   const send=useCallback(async(override?:string)=>{
     const msg=(override||input).trim()
     if(!msg||loading) return
@@ -119,10 +124,18 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
     setInput('');setLoading(true)
     if(inputRef.current) inputRef.current.style.height='44px'
     try {
-      const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,sessionHistory:messages.slice(-28),todayEntries,recentEntries,goals,totals,currentPage,date})})
+      const res=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:msg,sessionHistory:messages.slice(-28),todayEntries,recentEntries,goals,totals,currentPage,date})
+      })
       const json=await res.json()
       if(json.reply) setMessages(prev=>[...prev,{role:'assistant',content:json.reply}])
-      if(json.logData){await onLogFood(json.logData);onRefresh()}
+      // Use ref — always calls the latest handleLogFood with current state
+      if(json.logData){
+        await onLogFoodRef.current(json.logData)
+        onRefreshRef.current()
+      }
       if(json.weightData?.weight){
         const {data:{user}}=await supabase.auth.getUser()
         if(user) await supabase.from('weight_log').insert({user_id:user.id,date:localDate(),weight:json.weightData.weight})
@@ -134,7 +147,6 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
   const remCal=goals.calories-totals.calories
   const calPct=Math.min(100,Math.round((totals.calories/goals.calories)*100))
   const calColor=calPct>100?RED:calPct>85?ORANGE:GOLD
-
   const quick=[
     {l:'How am I doing?',m:'How am I doing today?'},
     {l:'What should I eat?',m:'What should I eat next?'},
@@ -167,7 +179,6 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
               <span style={{fontSize:10,color:MUTED,marginLeft:3}}>cal {remCal>0?'left':'over'}</span>
             </div>
           </div>
-
           <div style={{marginBottom:14}}>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
               <span style={{fontSize:10,color:MUTED,textTransform:'uppercase',letterSpacing:'0.07em',fontWeight:600}}>Calories</span>
@@ -177,7 +188,6 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
               <div style={{height:'100%',borderRadius:3,width:calPct+'%',background:calColor,transition:'width 0.4s ease'}}/>
             </div>
           </div>
-
           <div style={{display:'flex',justifyContent:'space-around',gap:4}}>
             <MacroRing label="Protein" value={totals.protein} goal={goals.protein} color={GREEN} unit="g"/>
             <MacroRing label="Carbs" value={totals.carbs} goal={goals.carbs} color={BLUE} unit="g"/>
@@ -220,7 +230,7 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
       </div>
 
       <style>{`
-        @keyframes ft-pulse { 0%,60%,100%{opacity:0.25;transform:scale(0.75)} 30%{opacity:1;transform:scale(1)} }
+        @keyframes ft-pulse{0%,60%,100%{opacity:0.25;transform:scale(0.75)}30%{opacity:1;transform:scale(1)}}
         *{-webkit-tap-highlight-color:transparent}
         ::-webkit-scrollbar{display:none}
       `}</style>
@@ -240,10 +250,15 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
   const [totals,setTotals]=useState<MacroTotals>({calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0})
   const [refreshKey,setRefreshKey]=useState(0)
   const [viewingDate,setViewingDate]=useState(localDate())
-  // Keep viewingDate in sync — reset to today when navigating away from log page
-  useEffect(()=>{ if(pathname!=='/log') setViewingDate(localDate()) },[pathname])
+
+  // Ref for viewingDate so callbacks always see latest value
+  const viewingDateRef=useRef(viewingDate)
+  useEffect(()=>{ viewingDateRef.current=viewingDate },[viewingDate])
 
   const activeTab=pathname.split('/')[1]||'log'
+
+  // Reset viewingDate to today when not on log page
+  useEffect(()=>{ if(pathname!=='/log') setViewingDate(localDate()) },[pathname])
 
   useEffect(()=>{
     supabase.auth.getUser().then(({data:{user}})=>{
@@ -258,7 +273,11 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
     const {data:td}=await supabase.from('food_entries').select('*').eq('user_id',user.id).eq('date',today).order('created_at',{ascending:true})
     const entries=(td||[]) as FoodEntry[]
     setTodayEntries(entries)
-    setTotals(entries.reduce((a,e)=>({calories:a.calories+(e.calories||0),protein:a.protein+(e.protein||0),carbs:a.carbs+(e.carbs||0),fat:a.fat+(e.fat||0),fiber:a.fiber+(e.fiber||0),sodium:a.sodium+(e.sodium||0)}),{calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0}))
+    setTotals(entries.reduce((a,e)=>({
+      calories:a.calories+(e.calories||0),protein:a.protein+(e.protein||0),
+      carbs:a.carbs+(e.carbs||0),fat:a.fat+(e.fat||0),
+      fiber:a.fiber+(e.fiber||0),sodium:a.sodium+(e.sodium||0),
+    }),{calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0}))
     const d7=new Date();d7.setDate(d7.getDate()-7)
     const d7s=d7.getFullYear()+'-'+String(d7.getMonth()+1).padStart(2,'0')+'-'+String(d7.getDate()).padStart(2,'0')
     const {data:rd}=await supabase.from('food_entries').select('name,calories,protein,carbs,fat,date').eq('user_id',user.id).gte('date',d7s).order('created_at',{ascending:false}).limit(150)
@@ -279,14 +298,17 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
     return ()=>window.removeEventListener('fueltrack:viewdate',h)
   },[])
 
-  const handleLogFood=async(data:any)=>{
-    if(!user) return null
-    // logData.date is set by chat API to the viewing date Patrick is on
-    // Fall back to viewingDate state, then localDate() as last resort
-    const logDate=data.date||viewingDate||localDate()
+  // handleLogFood wrapped in useCallback with ALL deps listed
+  // This ensures it always has the latest user, viewingDate, todayEntries
+  const handleLogFood=useCallback(async(data:any)=>{
+    if(!user) { console.error('handleLogFood: no user'); return null }
+    // Use viewingDateRef so this always has the current date even if called from stale closure
+    const logDate=data.date||viewingDateRef.current||localDate()
     const isLoggingToday=logDate===localDate()
 
-    // Tally: only merge into existing entry when logging to today and name matches
+    console.log('handleLogFood called:', data.name, 'logDate:', logDate, 'isToday:', isLoggingToday)
+
+    // Tally: merge into existing entry only when logging to today
     if(isLoggingToday) {
       const existing=todayEntries.find(e=>
         e.name.toLowerCase()===(data.name||'').toLowerCase()&&
@@ -301,27 +323,32 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
           fiber:(existing.fiber||0)+(data.fiber||0),
           sodium:(existing.sodium||0)+(data.sodium||0),
         }
-        const newServing=existing.serving!==data.serving
-          ?existing.serving+' + '+data.serving
-          :existing.serving
-        await supabase.from('food_entries')
-          .update({...updated,serving:newServing})
-          .eq('id',existing.id).eq('user_id',user.id)
+        const newServing=existing.serving!==data.serving?existing.serving+' + '+data.serving:existing.serving
+        await supabase.from('food_entries').update({...updated,serving:newServing}).eq('id',existing.id).eq('user_id',user.id)
+        console.log('handleLogFood: tallied into existing entry', existing.id)
         return existing.id
       }
     }
 
-    // Insert new entry — always uses logDate (could be today, yesterday, or any past date)
+    // Insert new entry
     const res=await fetch('/api/log-food',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({...data,date:logDate})
     })
     const json=await res.json()
+    console.log('handleLogFood: inserted new entry', JSON.stringify(json).slice(0,100))
     return json.entry?.id||null
-  }
+  },[user,todayEntries])
 
-  if(!user) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:DARK,color:MUTED,fontSize:14}}>Loading...</div>
+  // Ref always points to latest handleLogFood — ClaudeChat uses this ref
+  // so its stale send() closure always calls the current version
+  const onLogFoodRef=useRef(handleLogFood)
+  useEffect(()=>{ onLogFoodRef.current=handleLogFood },[handleLogFood])
+
+  if(!user) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:DARK,color:MUTED,fontSize:14}}>Loading...</div>
+  )
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100vh',background:DARK,overflow:'hidden'}}>
@@ -329,7 +356,16 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
         {children}
       </main>
       <NavBar active={activeTab}/>
-      <ClaudeChat todayEntries={todayEntries} recentEntries={recentEntries} totals={totals} goals={goals} date={viewingDate} currentPage={pathname} onLogFood={handleLogFood} onRefresh={()=>setRefreshKey(k=>k+1)}/>
+      <ClaudeChat
+        todayEntries={todayEntries}
+        recentEntries={recentEntries}
+        totals={totals}
+        goals={goals}
+        date={viewingDate}
+        currentPage={pathname}
+        onLogFoodRef={onLogFoodRef}
+        onRefresh={()=>setRefreshKey(k=>k+1)}
+      />
     </div>
   )
 }
