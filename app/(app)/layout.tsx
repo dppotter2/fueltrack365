@@ -239,6 +239,7 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
   const [recentEntries,setRecentEntries]=useState<FoodEntry[]>([])
   const [totals,setTotals]=useState<MacroTotals>({calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0})
   const [refreshKey,setRefreshKey]=useState(0)
+  const [viewingDate,setViewingDate]=useState(localDate())
 
   const activeTab=pathname.split('/')[1]||'log'
 
@@ -270,6 +271,12 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
     return ()=>window.removeEventListener('fueltrack:refresh',h)
   },[])
 
+  useEffect(()=>{
+    const h=(e:any)=>{ if(e.detail?.date) setViewingDate(e.detail.date) }
+    window.addEventListener('fueltrack:viewdate',h)
+    return ()=>window.removeEventListener('fueltrack:viewdate',h)
+  },[])
+
   const handleLogFood=async(data:any)=>{
     if(!user) return null
     const date=localDate()
@@ -294,7 +301,7 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
         {children}
       </main>
       <NavBar active={activeTab}/>
-      <ClaudeChat todayEntries={todayEntries} recentEntries={recentEntries} totals={totals} goals={goals} date={localDate()} currentPage={pathname} onLogFood={handleLogFood} onRefresh={()=>setRefreshKey(k=>k+1)}/>
+      <ClaudeChat todayEntries={todayEntries} recentEntries={recentEntries} totals={totals} goals={goals} date={viewingDate} currentPage={pathname} onLogFood={handleLogFood} onRefresh={()=>setRefreshKey(k=>k+1)}/>
     </div>
   )
 }
