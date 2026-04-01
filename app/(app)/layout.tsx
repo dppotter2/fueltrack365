@@ -7,8 +7,8 @@ import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import { DEFAULT_GOALS, MacroGoals, MacroTotals, ChatMessage, FoodEntry } from '@/lib/types'
 
-const GOLD='#d4a017',DARK='#0a0a0a',SURFACE='#141414',SURFACE2='#1e1e1e'
-const BORDER='#2a2a2a',TEXT='#f0f0f0',MUTED='#888'
+const GOLD='#d4a017',DARK='#0d1117',SURFACE='#161b22',SURFACE2='#21262d'
+const BORDER='#30363d',TEXT='#f0f0f0',MUTED='#888'
 const GREEN='#10b981',BLUE='#3b82f6',ORANGE='#f59e0b',RED='#ef4444',PURPLE='#8b5cf6'
 
 function localDate() {
