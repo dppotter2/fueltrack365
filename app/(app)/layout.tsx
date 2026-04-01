@@ -240,6 +240,8 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
   const [totals,setTotals]=useState<MacroTotals>({calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0})
   const [refreshKey,setRefreshKey]=useState(0)
   const [viewingDate,setViewingDate]=useState(localDate())
+  // Keep viewingDate in sync — reset to today when navigating away from log page
+  useEffect(()=>{ if(pathname!=='/log') setViewingDate(localDate()) },[pathname])
 
   const activeTab=pathname.split('/')[1]||'log'
 
@@ -279,22 +281,42 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
 
   const handleLogFood=async(data:any)=>{
     if(!user) return null
-    // Use date from logData (set by chat API to viewing date) or fall back to viewingDate
+    // logData.date is set by chat API to the viewing date Patrick is on
+    // Fall back to viewingDate state, then localDate() as last resort
     const logDate=data.date||viewingDate||localDate()
     const isLoggingToday=logDate===localDate()
-    
-    // Tally only works for today's entries (we have them in state)
+
+    // Tally: only merge into existing entry when logging to today and name matches
     if(isLoggingToday) {
-      const existing=todayEntries.find(e=>e.name.toLowerCase()===(data.name||'').toLowerCase()&&e.category===(data.category||'food'))
+      const existing=todayEntries.find(e=>
+        e.name.toLowerCase()===(data.name||'').toLowerCase()&&
+        e.category===(data.category||'food')
+      )
       if(existing){
-        const updated={calories:(existing.calories||0)+(data.calories||0),protein:(existing.protein||0)+(data.protein||0),carbs:(existing.carbs||0)+(data.carbs||0),fat:(existing.fat||0)+(data.fat||0),fiber:(existing.fiber||0)+(data.fiber||0),sodium:(existing.sodium||0)+(data.sodium||0)}
-        const newServing=existing.serving!==data.serving?existing.serving+' + '+data.serving:existing.serving
-        await supabase.from('food_entries').update({...updated,serving:newServing}).eq('id',existing.id).eq('user_id',user.id)
+        const updated={
+          calories:(existing.calories||0)+(data.calories||0),
+          protein:(existing.protein||0)+(data.protein||0),
+          carbs:(existing.carbs||0)+(data.carbs||0),
+          fat:(existing.fat||0)+(data.fat||0),
+          fiber:(existing.fiber||0)+(data.fiber||0),
+          sodium:(existing.sodium||0)+(data.sodium||0),
+        }
+        const newServing=existing.serving!==data.serving
+          ?existing.serving+' + '+data.serving
+          :existing.serving
+        await supabase.from('food_entries')
+          .update({...updated,serving:newServing})
+          .eq('id',existing.id).eq('user_id',user.id)
         return existing.id
       }
     }
-    // Always insert with the correct date
-    const res=await fetch('/api/log-food',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...data,date:logDate})})
+
+    // Insert new entry — always uses logDate (could be today, yesterday, or any past date)
+    const res=await fetch('/api/log-food',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({...data,date:logDate})
+    })
     const json=await res.json()
     return json.entry?.id||null
   }
