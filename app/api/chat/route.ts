@@ -122,8 +122,9 @@ export async function POST(req: NextRequest) {
     if (logMatch) {
       try {
         logData = JSON.parse(logMatch[1].trim())
-        // Always attach the viewing date so frontend logs to correct date
-        if (logData) logData.date = date
+        // Only set date if Claude didn't include one in the LOG block
+        // Claude sets "date" in the block when Patrick says "log for today/yesterday"
+        if (logData && !logData.date) logData.date = date
       } catch {}
     }
 
