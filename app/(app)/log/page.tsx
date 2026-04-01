@@ -12,16 +12,18 @@ function calcDate(offset=0):string {
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
 }
 
-function fullDateLabel(dateStr:string):string {
+function parseDateParts(dateStr:string) {
   const [y,m,day]=dateStr.split('-').map(Number)
   const d=new Date(y,m-1,day)
   const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
   const months=['January','February','March','April','May','June','July','August','September','October','November','December']
   const suf=[11,12,13].includes(day)?'th':day%10===1?'st':day%10===2?'nd':day%10===3?'rd':'th'
   const today=calcDate(0), yesterday=calcDate(-1)
-  if(dateStr===today) return 'Today — '+days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf
-  if(dateStr===yesterday) return 'Yesterday — '+days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf
-  return days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf
+  const longDate=days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf
+  const shortDate=m+'.'+day+'.'+y
+  if(dateStr===today) return {line1:'Today',line2:longDate,isRelative:true}
+  if(dateStr===yesterday) return {line1:'Yesterday',line2:longDate,isRelative:true}
+  return {line1:longDate,line2:shortDate,isRelative:false}
 }
 
 function MacroChip({label,value,goal,color}:{label:string;value:number;goal:number;color:string}) {
@@ -111,11 +113,18 @@ export default function LogPage() {
   return (
     <div style={{minHeight:'100%',background:DARK}}>
       {/* Date nav */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px 8px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px 8px'}}> 
         <button onClick={()=>setOffset(d=>d-1)} style={{background:'none',border:'none',color:MUTED,fontSize:24,padding:'4px 10px',cursor:'pointer',lineHeight:1}}>&lsaquo;</button>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:16,fontWeight:700,color:TEXT,lineHeight:1.2}}>{fullDateLabel(date)}</div>
-          <div style={{fontSize:11,color:MUTED,marginTop:2}}>{date}</div>
+        <div style={{textAlign:'center',position:'relative'}}>
+          {(()=>{
+            const dp=parseDateParts(date)
+            return (
+              <>
+                <div style={{fontSize:dp.isRelative?18:15,fontWeight:800,color:TEXT,lineHeight:1.15,letterSpacing:dp.isRelative?'-0.3px':'0'}}>{dp.line1}</div>
+                <div style={{fontSize:dp.isRelative?13:11,color:MUTED,marginTop:3,fontWeight:dp.isRelative?500:400}}>{dp.line2}</div>
+              </>
+            )
+          })()}
         </div>
         <button onClick={()=>setOffset(d=>Math.min(0,d+1))} disabled={offset===0} style={{background:'none',border:'none',color:offset===0?SURFACE2:MUTED,fontSize:24,padding:'4px 10px',cursor:offset===0?'default':'pointer',lineHeight:1}}>&rsaquo;</button>
       </div>
