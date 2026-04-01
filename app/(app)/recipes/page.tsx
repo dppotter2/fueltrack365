@@ -33,18 +33,27 @@ function isPantry(name: string): boolean {
 }
 
 function getMacros(recipe: any) {
+  // Real DB schema uses flat columns: calories_per_serving, protein_per_serving, etc.
+  // Also support macros_per_serving object (for newly saved recipes)
   const raw = recipe.macros_per_serving
-  if (!raw) return {calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0}
-  // Handle both nested and flat structures
-  const m = (typeof raw === 'object' && raw.calories !== undefined) ? raw : 
-            (raw.macros_per_serving ? raw.macros_per_serving : raw)
+  if (raw && typeof raw === 'object' && raw.calories !== undefined) {
+    return {
+      calories: Math.round(Number(raw.calories)||0),
+      protein: Math.round(Number(raw.protein)||0),
+      carbs: Math.round(Number(raw.carbs)||0),
+      fat: Math.round(Number(raw.fat)||0),
+      fiber: Math.round(Number(raw.fiber)||0),
+      sodium: Math.round(Number(raw.sodium)||0),
+    }
+  }
+  // Flat columns (original DB schema)
   return {
-    calories: Math.round(Number(m.calories)||0),
-    protein: Math.round(Number(m.protein)||0),
-    carbs: Math.round(Number(m.carbs)||0),
-    fat: Math.round(Number(m.fat)||0),
-    fiber: Math.round(Number(m.fiber)||0),
-    sodium: Math.round(Number(m.sodium)||0),
+    calories: Math.round(Number(recipe.calories_per_serving)||0),
+    protein: Math.round(Number(recipe.protein_per_serving)||0),
+    carbs: Math.round(Number(recipe.carbs_per_serving)||0),
+    fat: Math.round(Number(recipe.fat_per_serving)||0),
+    fiber: Math.round(Number(recipe.fiber_per_serving)||0),
+    sodium: Math.round(Number(recipe.sodium_per_serving)||0),
   }
 }
 
