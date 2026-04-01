@@ -59,7 +59,27 @@ export async function POST(req: NextRequest) {
     const frequents = Object.entries(freq).filter(([,c]) => c >= 2).sort((a,b) => b[1]-a[1])
       .slice(0,12).map(([n,c]) => n + ' (' + c + 'x this week)')
 
-    const ctx = 'TODAY: ' + date + ' | ' + currentPage + '\nTime: ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}) + '\nLogged (' + todayEntries.length + '): ' + (todayEntries.length===0 ? 'nothing' : (todayEntries as any[]).map(e=>e.name+' '+e.calories+'cal').join(', ')) + '\nRemaining: ' + remaining.calories + 'cal | ' + remaining.protein + 'gP | ' + remaining.carbs + 'gC | ' + remaining.fat + 'gF\nTotals: ' + totals.calories + '/' + goals.calories + 'cal | ' + totals.protein + '/' + goals.protein + 'gP | fiber:' + totals.fiber + 'g | sodium:' + totals.sodium + 'mg\nFrequent: ' + (frequents.length>0 ? frequents.join(', ') : 'none yet')
+    // Format the viewing date fully for Claude
+    const viewDateObj = new Date(date + 'T12:00:00')
+    const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const vDay = viewDateObj.getDate()
+    const vSuf = [11,12,13].includes(vDay)?'th':vDay%10===1?'st':vDay%10===2?'nd':vDay%10===3?'rd':'th'
+    const fullDateStr = dayNames[viewDateObj.getDay()]+', '+monthNames[viewDateObj.getMonth()]+' '+vDay+vSuf+' '+date
+    const todayStr = new Date().toISOString().split('T')[0]
+    const isViewingToday = date === todayStr
+    const isViewingYesterday = date === new Date(new Date().setDate(new Date().getDate()-1)).toISOString().split('T')[0]
+    const dateContext = isViewingToday ? 'TODAY ('+fullDateStr+')' : isViewingYesterday ? 'YESTERDAY ('+fullDateStr+')' : 'PAST DATE ('+fullDateStr+')'
+    const now = new Date()
+    const timeStr = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')
+
+    const ctx = '## ACTIVE DATE: '+dateContext+'\n' +
+      'Current time: '+timeStr+' | Page: '+currentPage+'\n' +
+      'IMPORTANT: Log ALL food to date '+date+' — NOT to today unless '+date+' IS today.\n' +
+      'Logged on '+date+' ('+todayEntries.length+' entries): '+(todayEntries.length===0 ? 'nothing' : (todayEntries as any[]).map(e=>e.name+' '+e.calories+'cal').join(', '))+'\n' +
+      'Remaining for '+date+': '+remaining.calories+'cal | '+remaining.protein+'gP | '+remaining.carbs+'gC | '+remaining.fat+'gF\n' +
+      'Totals for '+date+': '+totals.calories+'/'+goals.calories+'cal | '+totals.protein+'/'+goals.protein+'gP | fiber:'+totals.fiber+'g | sodium:'+totals.sodium+'mg\n' +
+      'Frequent items this week: '+(frequents.length>0 ? frequents.join(', ') : 'none yet')
 
     const historyMsgs = sessionHistory.slice(-28).map((m: any) => ({ role: m.role as 'user'|'assistant', content: m.content }))
     let messages: any[] = [...historyMsgs, { role: 'user' as const, content: '[CONTEXT]\n' + ctx + '\n[/CONTEXT]\n\n' + message }]
@@ -94,7 +114,13 @@ export async function POST(req: NextRequest) {
 
     let logData = null
     const logMatch = rawText.match(/\|\|LOG\|\|([\s\S]+?)\|\|END\|\|/)
-    if (logMatch) { try { logData = JSON.parse(logMatch[1].trim()) } catch {} }
+    if (logMatch) {
+      try {
+        logData = JSON.parse(logMatch[1].trim())
+        // Always attach the viewing date so frontend logs to correct date
+        if (logData) logData.date = date
+      } catch {}
+    }
 
     let recipeData = null
     const recipeMatch = rawText.match(/\|\|RECIPE\|\|([\s\S]+?)\|\|END\|\|/)
