@@ -29,7 +29,8 @@ NEVER: white rice, snap/snow peas, organ meats, cottage cheese
 Cooks for 2. Recipes default 6 servings. Veg measurements in oz. Equipment: Weber Searwood smoker, Dutch oven, cast iron, Instant Pot.
 
 ## DATA FORMATS
-LOG FOOD: emit ||LOG||{"name":"...","serving":"...","calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N,"category":"food or drink"}||END||
+LOG FOOD: emit ||LOG||{"name":"...","serving":"...","calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N,"category":"food or drink","date":"YYYY-MM-DD"}||END||
+   The "date" field MUST match where Patrick wants it logged. Default to the ACTIVE DATE. Change it if Patrick explicitly says a different date ("log to today", "for yesterday", etc.).
 RECIPE: emit ||RECIPE||{"name":"...","servings":6,"macros_per_serving":{"calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N},"ingredients":[{"name":"...","amount":"...","category":"pantry|protein|produce|dairy|spice"}],"steps":["..."],"cuisine":"...","cooking_method":"...","tags":["..."]}||END||
 WEIGHT: emit ||WEIGHT||{"weight":N}||END||
 
@@ -75,11 +76,15 @@ export async function POST(req: NextRequest) {
 
     const ctx = '## ACTIVE DATE: '+dateContext+'\n' +
       'Current time: '+timeStr+' | Page: '+currentPage+'\n' +
-      'IMPORTANT: Log ALL food to date '+date+' — NOT to today unless '+date+' IS today.\n' +
-      'Logged on '+date+' ('+todayEntries.length+' entries): '+(todayEntries.length===0 ? 'nothing' : (todayEntries as any[]).map(e=>e.name+' '+e.calories+'cal').join(', '))+'\n' +
+      'LOGGING RULE: Always emit the LOG block with the date field set to the date Patrick intends.\n' +
+      '- Default log date: '+date+' (the date tab Patrick is currently viewing)\n' +
+      '- If Patrick says "for today" or "log to today": use '+todayStr+'\n' +
+      '- If Patrick says "for yesterday" or "log to yesterday": use date before '+todayStr+'\n' +
+      '- The LOG block MUST include: "date":"YYYY-MM-DD" matching the intended date.\n' +
+      'Entries on '+date+' ('+todayEntries.length+'): '+(todayEntries.length===0 ? 'none' : (todayEntries as any[]).map(e=>e.name+' '+e.calories+'cal').join(', '))+'\n' +
       'Remaining for '+date+': '+remaining.calories+'cal | '+remaining.protein+'gP | '+remaining.carbs+'gC | '+remaining.fat+'gF\n' +
       'Totals for '+date+': '+totals.calories+'/'+goals.calories+'cal | '+totals.protein+'/'+goals.protein+'gP | fiber:'+totals.fiber+'g | sodium:'+totals.sodium+'mg\n' +
-      'Frequent items this week: '+(frequents.length>0 ? frequents.join(', ') : 'none yet')
+      'Frequent this week: '+(frequents.length>0 ? frequents.join(', ') : 'none')
 
     const historyMsgs = sessionHistory.slice(-28).map((m: any) => ({ role: m.role as 'user'|'assistant', content: m.content }))
     let messages: any[] = [...historyMsgs, { role: 'user' as const, content: '[CONTEXT]\n' + ctx + '\n[/CONTEXT]\n\n' + message }]
