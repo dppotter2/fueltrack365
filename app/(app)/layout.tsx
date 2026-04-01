@@ -364,7 +364,7 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
         date={viewingDate}
         currentPage={pathname}
         onLogFoodRef={onLogFoodRef}
-        onRefresh={()=>setRefreshKey(k=>k+1)}
+        onRefresh={()=>{ setRefreshKey(k=>k+1); window.dispatchEvent(new CustomEvent('fueltrack:refresh')) }}
       />
     </div>
   )
