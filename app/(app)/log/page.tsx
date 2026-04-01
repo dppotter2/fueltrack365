@@ -6,8 +6,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
 import { FoodEntry, MacroTotals, DEFAULT_GOALS } from '@/lib/types'
 
-const GOLD = '#d4a017', DARK = '#0a0a0a', SURFACE = '#141414', SURFACE2 = '#1e1e1e'
-const BORDER = '#2a2a2a', TEXT = '#f0f0f0', MUTED = '#888', BLUE = '#3b82f6'
+const GOLD = '#d4a017', DARK = '#0d1117', SURFACE = '#161b22', SURFACE2 = '#21262d'
+const BORDER = '#30363d', TEXT = '#f0f0f0', MUTED = '#888', BLUE = '#3b82f6'
 
 function localDate(offset = 0) {
   const d = new Date(); d.setDate(d.getDate() + offset)
