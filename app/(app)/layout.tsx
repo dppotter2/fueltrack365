@@ -302,44 +302,16 @@ export default function AppLayout({children}:{children:React.ReactNode}) {
   // This ensures it always has the latest user, viewingDate, todayEntries
   const handleLogFood=useCallback(async(data:any)=>{
     if(!user) { console.error('handleLogFood: no user'); return null }
-    // Use viewingDateRef so this always has the current date even if called from stale closure
     const logDate=data.date||viewingDateRef.current||localDate()
-    const isLoggingToday=logDate===localDate()
-
-    console.log('handleLogFood called:', data.name, 'logDate:', logDate, 'isToday:', isLoggingToday)
-
-    // Tally: merge into existing entry only when logging to today
-    if(isLoggingToday) {
-      const existing=todayEntries.find(e=>
-        e.name.toLowerCase()===(data.name||'').toLowerCase()&&
-        e.category===(data.category||'food')
-      )
-      if(existing){
-        const updated={
-          calories:(existing.calories||0)+(data.calories||0),
-          protein:(existing.protein||0)+(data.protein||0),
-          carbs:(existing.carbs||0)+(data.carbs||0),
-          fat:(existing.fat||0)+(data.fat||0),
-          fiber:(existing.fiber||0)+(data.fiber||0),
-          sodium:(existing.sodium||0)+(data.sodium||0),
-        }
-        const newServing=existing.serving!==data.serving?existing.serving+' + '+data.serving:existing.serving
-        await supabase.from('food_entries').update({...updated,serving:newServing}).eq('id',existing.id).eq('user_id',user.id)
-        console.log('handleLogFood: tallied into existing entry', existing.id)
-        return existing.id
-      }
-    }
-
-    // Insert new entry
+    // Always insert a new entry — no tally merging (causes duplicates/lost data)
     const res=await fetch('/api/log-food',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({...data,date:logDate})
     })
     const json=await res.json()
-    console.log('handleLogFood: inserted new entry', JSON.stringify(json).slice(0,100))
     return json.entry?.id||null
-  },[user,todayEntries])
+  },[user])
 
   // Ref always points to latest handleLogFood — ClaudeChat uses this ref
   // so its stale send() closure always calls the current version
