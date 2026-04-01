@@ -17,9 +17,9 @@ function parseDateParts(dateStr:string) {
   const d=new Date(y,m-1,day)
   const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
   const months=['January','February','March','April','May','June','July','August','September','October','November','December']
-  const suf=[11,12,13].includes(day)?'th':day%10===1?'st':day%10===2?'nd':day%10===3?'rd':'th'
   const today=calcDate(0), yesterday=calcDate(-1)
-  const longDate=days[d.getDay()]+', '+months[d.getMonth()]+' '+day+suf
+  // No ordinal suffixes — clean format
+  const longDate=days[d.getDay()]+', '+months[d.getMonth()]+' '+day
   const shortDate=m+'.'+day+'.'+y
   if(dateStr===today) return {line1:'Today',line2:longDate,isRelative:true}
   if(dateStr===yesterday) return {line1:'Yesterday',line2:longDate,isRelative:true}
