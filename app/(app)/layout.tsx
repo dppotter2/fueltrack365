@@ -101,7 +101,7 @@ function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,on
   useEffect(()=>{ onRefreshRef.current=onRefresh },[onRefresh])
 
   useEffect(()=>{
-    if(!open||historyLoaded) return
+    if(historyLoaded) return
     ;(async()=>{
       const {data:{user}}=await supabase.auth.getUser()
       if(!user) return
