@@ -313,23 +313,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const d = dateObj.getDate()
   const suf = [11,12,13].includes(d) ? 'th' : d%10===1 ? 'st' : d%10===2 ? 'nd' : d%10===3 ? 'rd' : 'th'
-  const dateStr = `${dayNames[dateObj.getDay()]}, ${monthNames[dateObj.getMonth()]} ${d}${suf}`
+  const fullMonthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const dateStr = `${dayNames[dateObj.getDay()]}, ${fullMonthNames[dateObj.getMonth()]} ${d}${suf}`
   const isToday = viewingDate === new Date().toISOString().split('T')[0]
 
-  // Macro bar component
-  const MacroBar = ({ label, current, goal, color }: { label: string; current: number; goal: number; color: string }) => {
-    const pct = Math.min((current / goal) * 100, 100)
+  // Circular ring component
+  const Ring = ({ label, current, goal, color, size = 52 }: { label: string; current: number; goal: number; color: string; size?: number }) => {
+    const pct = Math.min(current / goal, 1)
     const over = current > goal
+    const r = (size - 6) / 2
+    const circ = 2 * Math.PI * r
+    const offset = circ * (1 - pct)
+    const left = goal - current
     return (
-      <div style={{ flex: 1, textAlign: 'center' }}>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: over ? '#f87171' : color, lineHeight: 1 }}>
-          {Math.round(current)}
+      <div style={{ textAlign: 'center', width: size + 8 }}>
+        <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }}>
+          <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={SURFACE2} strokeWidth={4} />
+            <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={over ? '#f87171' : color} strokeWidth={4}
+              strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+              style={{ transition: 'stroke-dashoffset 0.5s ease' }} />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 700, color: over ? '#f87171' : TEXT }}>
+              {Math.round(current)}
+            </span>
+          </div>
         </div>
-        <div style={{ height: 3, background: SURFACE2, borderRadius: 2, margin: '3px 0 2px', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: over ? '#f87171' : color, borderRadius: 2, transition: 'width 0.3s' }} />
+        <div style={{ fontSize: 9, fontWeight: 600, color, letterSpacing: '0.06em', marginTop: 2 }}>{label}</div>
+        <div style={{ fontSize: 8, color: MUTED, fontFamily: "'JetBrains Mono',monospace" }}>
+          {left > 0 ? Math.round(left) + ' left' : '+' + Math.abs(Math.round(left))}
         </div>
-        <div style={{ fontSize: 9, color: MUTED, fontFamily: "'JetBrains Mono',monospace" }}>/{goal}</div>
-        <div style={{ fontSize: 8, color: MUTED, letterSpacing: '0.05em' }}>{label}</div>
       </div>
     )
   }
@@ -345,21 +359,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div style={{ minHeight: '100vh', background: DARK, display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' }}>
-      {/* Macro pill row */}
-      <div style={{ padding: '12px 16px 6px', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <div style={{ flex: 1, display: 'flex', gap: 6 }}>
-          <MacroBar label="CAL" current={totals.calories} goal={goals.calories} color={GOLD} />
-          <MacroBar label="P" current={totals.protein} goal={goals.protein} color="#22c55e" />
-          <MacroBar label="C" current={totals.carbs} goal={goals.carbs} color={BLUE} />
-          <MacroBar label="F" current={totals.fat} goal={goals.fat} color="#f59e0b" />
-        </div>
-        {/* Water indicator */}
-        <div style={{ textAlign: 'center', minWidth: 36 }}>
-          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: '#38bdf8' }}>
-            {waterOz}
-          </div>
-          <div style={{ fontSize: 8, color: MUTED }}>oz H2O</div>
-        </div>
+      {/* Macro rings */}
+      <div style={{ padding: '10px 8px 4px', display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start' }}>
+        <Ring label="CAL" current={totals.calories} goal={goals.calories} color={GOLD} size={56} />
+        <Ring label="PROTEIN" current={totals.protein} goal={goals.protein} color="#22c55e" />
+        <Ring label="CARBS" current={totals.carbs} goal={goals.carbs} color={BLUE} />
+        <Ring label="FAT" current={totals.fat} goal={goals.fat} color="#f59e0b" />
+        <Ring label="H2O" current={waterOz} goal={100} color="#38bdf8" size={44} />
       </div>
 
       {/* Date label */}
@@ -372,58 +378,64 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* Bottom nav with Ask AI in center */}
+      {/* Bottom nav */}
       <div style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 480, background: SURFACE,
-        borderTop: `1px solid ${BORDER}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
-        padding: '6px 0 env(safe-area-inset-bottom, 8px)',
+        width: '100%', maxWidth: 480,
+        background: 'rgba(13,17,23,0.85)',
+        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        borderTop: '1px solid rgba(48,54,61,0.6)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around',
+        padding: '0 0 env(safe-area-inset-bottom, 6px)',
         zIndex: 100,
       }}>
-        {tabs.slice(0, 2).map(t => (
-          <a key={t.path} href={t.path} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-            textDecoration: 'none', padding: '4px 12px',
-            color: pathname === t.path ? GOLD : MUTED,
-            fontSize: 10, fontWeight: pathname === t.path ? 600 : 400,
-            letterSpacing: '0.05em',
-          }}>
-            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px solid ${pathname === t.path ? GOLD : MUTED}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: pathname === t.path ? GOLD : 'transparent' }} />
-            </div>
-            {t.label}
-          </a>
-        ))}
+        {tabs.slice(0, 2).map(t => {
+          const active = pathname === t.path
+          return (
+            <a key={t.path} href={t.path} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+              textDecoration: 'none', padding: '10px 16px 6px',
+              color: active ? GOLD : MUTED, fontSize: 10, fontWeight: 500,
+              letterSpacing: '0.04em', position: 'relative',
+            }}>
+              {active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 2, borderRadius: 1, background: GOLD }} />}
+              <div style={{ fontSize: 18, lineHeight: 1 }}>{t.path === '/log' ? (active ? '\u25C9' : '\u25CB') : t.path === '/trends' ? (active ? '\u25B2' : '\u25B3') : ''}</div>
+              {t.label}
+            </a>
+          )
+        })}
 
-        {/* Ask AI pill - center */}
+        {/* Ask AI - floating center */}
         <button
           onClick={() => { setChatOpen(true); setTimeout(() => inputRef.current?.focus(), 100) }}
           style={{
-            background: GOLD, border: 'none', borderRadius: 20,
-            padding: '10px 20px', color: DARK, fontSize: 13, fontWeight: 700,
-            cursor: 'pointer', letterSpacing: '0.02em',
-            boxShadow: '0 2px 12px rgba(212,160,23,0.3)',
-            transform: 'translateY(-8px)',
+            background: 'linear-gradient(135deg, #d4a017 0%, #b8860b 100%)',
+            border: 'none', borderRadius: 24,
+            padding: '12px 24px', color: DARK, fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', letterSpacing: '0.03em',
+            boxShadow: '0 4px 20px rgba(212,160,23,0.4), 0 0 0 1px rgba(212,160,23,0.2)',
+            transform: 'translateY(-14px)',
+            fontFamily: "'Inter',sans-serif",
           }}
         >
           Ask AI
         </button>
 
-        {tabs.slice(2).map(t => (
-          <a key={t.path} href={t.path} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-            textDecoration: 'none', padding: '4px 12px',
-            color: pathname === t.path ? GOLD : MUTED,
-            fontSize: 10, fontWeight: pathname === t.path ? 600 : 400,
-            letterSpacing: '0.05em',
-          }}>
-            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px solid ${pathname === t.path ? GOLD : MUTED}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: pathname === t.path ? GOLD : 'transparent' }} />
-            </div>
-            {t.label}
-          </a>
-        ))}
+        {tabs.slice(2).map(t => {
+          const active = pathname === t.path
+          return (
+            <a key={t.path} href={t.path} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+              textDecoration: 'none', padding: '10px 16px 6px',
+              color: active ? GOLD : MUTED, fontSize: 10, fontWeight: 500,
+              letterSpacing: '0.04em', position: 'relative',
+            }}>
+              {active && <div style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 2, borderRadius: 1, background: GOLD }} />}
+              <div style={{ fontSize: 18, lineHeight: 1 }}>{t.path === '/recipes' ? (active ? '\u25A3' : '\u25A2') : t.path === '/profile' ? (active ? '\u25C9' : '\u25CB') : ''}</div>
+              {t.label}
+            </a>
+          )
+        })}
       </div>
 
       {/* Chat modal */}
@@ -452,25 +464,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   background: 'none', border: 'none', color: MUTED, fontSize: 20, cursor: 'pointer', padding: '0 4px',
                 }}>x</button>
               </div>
-              {/* Compact macro bars in chat header */}
-              <div style={{ display: 'flex', gap: 8 }}>
+              {/* Compact macro rings in chat header */}
+              <div style={{ display: 'flex', justifyContent: 'space-around' }}>
                 {[
                   { label: 'Cal', cur: totals.calories, goal: goals.calories, color: GOLD },
                   { label: 'P', cur: totals.protein, goal: goals.protein, color: '#22c55e' },
                   { label: 'C', cur: totals.carbs, goal: goals.carbs, color: BLUE },
                   { label: 'F', cur: totals.fat, goal: goals.fat, color: '#f59e0b' },
                 ].map(m => {
-                  const pct = Math.min((m.cur / m.goal) * 100, 100)
+                  const pct = Math.min(m.cur / m.goal, 1)
                   const left = m.goal - m.cur
+                  const r = 14, circ = 2 * Math.PI * r, off = circ * (1 - pct)
                   return (
-                    <div key={m.label} style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: MUTED, marginBottom: 2 }}>
-                        <span>{m.label}</span>
-                        <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{left > 0 ? `${Math.round(left)} left` : `+${Math.abs(Math.round(left))} over`}</span>
+                    <div key={m.label} style={{ textAlign: 'center' }}>
+                      <div style={{ position: 'relative', width: 36, height: 36, margin: '0 auto' }}>
+                        <svg width={36} height={36} style={{ transform: 'rotate(-90deg)' }}>
+                          <circle cx={18} cy={18} r={r} fill="none" stroke={SURFACE2} strokeWidth={3} />
+                          <circle cx={18} cy={18} r={r} fill="none" stroke={left < 0 ? '#f87171' : m.color} strokeWidth={3}
+                            strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round" />
+                        </svg>
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, fontWeight: 700, color: left < 0 ? '#f87171' : TEXT }}>{Math.round(m.cur)}</span>
+                        </div>
                       </div>
-                      <div style={{ height: 3, background: SURFACE2, borderRadius: 2, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: left < 0 ? '#f87171' : m.color, borderRadius: 2 }} />
-                      </div>
+                      <div style={{ fontSize: 8, color: MUTED, marginTop: 1 }}>{m.label}</div>
                     </div>
                   )
                 })}
