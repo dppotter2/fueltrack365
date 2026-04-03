@@ -78,7 +78,7 @@ export default function TrendsPage() {
       setWeekData(Object.values(byDate))
 
       // Weight data with forecast
-      const wData = (weightRes.data || []).map((w: any) => ({ date: w.date, weight: w.weight }))
+      const wData: any[] = (weightRes.data || []).map((w: any) => ({ date: w.date, weight: w.weight }))
       if (wData.length >= 2) {
         const last = wData[wData.length - 1]
         const first = wData[Math.max(0, wData.length - 14)]
