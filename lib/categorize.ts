@@ -1,17 +1,12 @@
 const DRINK_KEYWORDS = [
-  'drink', 'beverage', 'juice', 'smoothie', 'shake', 'hydration',
-  'electrolyte', 'kaged', 'core power', 'horchata', 'coffee', 'latte',
-  'espresso', 'tea', 'water', 'milk', 'soda', 'sparkling', 'broth',
+  'kaged', 'hydration', 'core power', 'fairlife', 'protein shake',
+  'coffee', 'tea', 'juice', 'water', 'soda', 'smoothie', 'milk',
+  'lemonade', 'horchata', 'salud', 'drink', 'kombucha', 'seltzer'
 ]
 
-// NOTE: kombucha is NOT in this list — it's a food, not a drink
-
-export function categorizeFood(
-  name: string,
-  calories: number,
-  protein: number
-): 'food' | 'drink' {
+export function categorizeFood(name: string, calories: number, protein: number): 'meal' | 'drink' | 'snack' {
   const lower = name.toLowerCase()
-  if (DRINK_KEYWORDS.some(kw => lower.includes(kw))) return 'drink'
-  return 'food'
+  if (DRINK_KEYWORDS.some(k => lower.includes(k))) return 'drink'
+  if (calories >= 300 || protein >= 30) return 'meal'
+  return 'snack'
 }

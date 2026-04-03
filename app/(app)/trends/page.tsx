@@ -1,140 +1,204 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
-import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase-browser'
-import { DEFAULT_GOALS } from '@/lib/types'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts'
 
-const GOLD='#d4a017',DARK='#0d1117',SURFACE='#161b22',SURFACE2='#21262d'
-const BORDER='#30363d',TEXT='#f0f0f0',MUTED='#8b949e'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, ReferenceLine } from 'recharts'
 
-function localDate(offset=0) {
-  const d=new Date(); d.setDate(d.getDate()+offset)
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
-}
-function shortDay(s:string) {
-  const [y,m,day]=s.split('-').map(Number)
-  return ['Su','Mo','Tu','We','Th','Fr','Sa'][new Date(y,m-1,day).getDay()]
-}
-const TT=({active,payload,label}:any)=>{
-  if(!active||!payload?.length) return null
-  return (
-    <div style={{background:SURFACE2,border:'1px solid '+BORDER,borderRadius:10,padding:'8px 12px',fontSize:12}}>
-      <div style={{color:TEXT,fontWeight:700,marginBottom:4}}>{label}</div>
-      {payload.map((p:any,i:number)=><div key={i} style={{color:p.color,marginBottom:1}}>{p.name}: {Math.round(p.value)}{p.name==='Calories'?'':'g'}</div>)}
-    </div>
-  )
-}
-const StatCard=({label,value,goal,unit=''}:any)=>(
-  <div style={{flex:1,background:SURFACE2,borderRadius:12,padding:'12px 10px',textAlign:'center'}}>
-    <div style={{fontSize:20,fontWeight:800,color:GOLD}}>{value}{unit}</div>
-    <div style={{fontSize:9,color:MUTED,textTransform:'uppercase',letterSpacing:'0.06em',marginTop:2}}>{label}</div>
-    {goal&&<div style={{fontSize:10,color:MUTED,marginTop:1}}>goal: {goal}{unit}</div>}
-  </div>
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+const DARK = '#0d1117'
+const SURFACE = '#161b22'
+const SURFACE2 = '#21262d'
+const BORDER = '#30363d'
+const GOLD = '#d4a017'
+const TEXT = '#e6e1d6'
+const MUTED = '#6b7f99'
+
+const CHECKPOINTS = [
+  { weight: 270, label: '270' },
+  { weight: 255, label: '255' },
+  { weight: 240, label: '240' },
+  { weight: 230, label: '230 (Goal)' },
+]
+
 export default function TrendsPage() {
-  const supabase=createClient()
-  const [user,setUser]=useState<any>(null)
-  const [weekData,setWeekData]=useState<any[]>([])
-  const [weightData,setWeightData]=useState<any[]>([])
-  const [weekAvg,setWeekAvg]=useState({calories:0,protein:0,carbs:0,fat:0})
-  const [weightInput,setWeightInput]=useState('')
-  const [saving,setSaving]=useState(false)
-  const goals=DEFAULT_GOALS
+  const [user, setUser] = useState<any>(null)
+  const [weekData, setWeekData] = useState<any[]>([])
+  const [weightData, setWeightData] = useState<any[]>([])
+  const [heatData, setHeatData] = useState<any[]>([])
+  const [goals, setGoals] = useState({ calories: 1650, protein: 200, carbs: 140, fat: 40 })
 
-  useEffect(()=>{ supabase.auth.getUser().then(({data:{user}})=>setUser(user)) },[])
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user))
+  }, [])
 
-  const load=useCallback(async()=>{
-    if(!user) return
-    const dates=Array.from({length:7},(_,i)=>localDate(i-6))
-    const {data:entries}=await supabase.from('food_entries').select('date,calories,protein,carbs,fat').eq('user_id',user.id).gte('date',dates[0])
-    const byDate:Record<string,any>={}
-    dates.forEach(d=>{byDate[d]={calories:0,protein:0,carbs:0,fat:0,count:0}})
-    for(const e of (entries||[])){if(byDate[e.date]){byDate[e.date].calories+=e.calories||0;byDate[e.date].protein+=e.protein||0;byDate[e.date].carbs+=e.carbs||0;byDate[e.date].fat+=e.fat||0;byDate[e.date].count++}}
-    const chart=dates.map(d=>({day:shortDay(d),Calories:Math.round(byDate[d].calories),Protein:Math.round(byDate[d].protein),Carbs:Math.round(byDate[d].carbs),Fat:Math.round(byDate[d].fat),hasData:byDate[d].count>0}))
-    setWeekData(chart)
-    const dwd=chart.filter(d=>d.hasData)
-    if(dwd.length>0) setWeekAvg({calories:Math.round(dwd.reduce((s,d)=>s+d.Calories,0)/dwd.length),protein:Math.round(dwd.reduce((s,d)=>s+d.Protein,0)/dwd.length),carbs:Math.round(dwd.reduce((s,d)=>s+d.Carbs,0)/dwd.length),fat:Math.round(dwd.reduce((s,d)=>s+d.Fat,0)/dwd.length)})
-    const d30=new Date();d30.setDate(d30.getDate()-29)
-    const d30s=d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0')
-    const {data:wt}=await supabase.from('weight_log').select('date,weight').eq('user_id',user.id).gte('date',d30s).order('date',{ascending:true})
-    setWeightData((wt||[]).map(w=>({date:w.date.slice(5),weight:w.weight})))
-  },[user])
-  useEffect(()=>{load()},[load])
+  useEffect(() => {
+    if (!user) return
+    const load = async () => {
+      const today = new Date()
+      const days7 = new Date(today.getTime() - 7 * 86400000).toISOString().split('T')[0]
+      const days30 = new Date(today.getTime() - 30 * 86400000).toISOString().split('T')[0]
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
-  const logWeight=async()=>{
-    if(!weightInput||!user) return; const w=parseFloat(weightInput); if(isNaN(w)) return
-    setSaving(true)
-    await supabase.from('weight_log').upsert({user_id:user.id,date:localDate(),weight:w},{onConflict:'user_id,date'})
-    setWeightInput('');setSaving(false);load()
+      const [entriesRes, weightRes, goalsRes] = await Promise.all([
+        supabase.from('food_entries').select('date,calories,protein,carbs,fat').eq('user_id', user.id).gte('date', days7),
+        supabase.from('weight_entries').select('date,weight').eq('user_id', user.id).order('date', { ascending: true }).limit(90),
+        supabase.from('user_goals').select('*').eq('user_id', user.id).single(),
+      ])
+
+      if (goalsRes.data) {
+        setGoals({
+          calories: goalsRes.data.calories || 1650,
+          protein: goalsRes.data.protein || 200,
+          carbs: goalsRes.data.carbs || 140,
+          fat: goalsRes.data.fat || 40,
+        })
+      }
+
+      // Build 7-day chart data
+      const byDate: Record<string, any> = {}
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000)
+        const ds = d.toISOString().split('T')[0]
+        byDate[ds] = { date: ds, day: dayNames[d.getDay()], calories: 0, protein: 0, carbs: 0, fat: 0 }
+      }
+      ;(entriesRes.data || []).forEach((e: any) => {
+        if (byDate[e.date]) {
+          byDate[e.date].calories += e.calories || 0
+          byDate[e.date].protein += e.protein || 0
+          byDate[e.date].carbs += e.carbs || 0
+          byDate[e.date].fat += e.fat || 0
+        }
+      })
+      setWeekData(Object.values(byDate))
+
+      // Weight data with forecast
+      const wData = (weightRes.data || []).map((w: any) => ({ date: w.date, weight: w.weight }))
+      if (wData.length >= 2) {
+        const last = wData[wData.length - 1]
+        const first = wData[Math.max(0, wData.length - 14)]
+        const daysSpan = (new Date(last.date).getTime() - new Date(first.date).getTime()) / 86400000
+        const rate = daysSpan > 0 ? (first.weight - last.weight) / daysSpan : 0
+        if (rate > 0) {
+          for (let i = 1; i <= 30; i++) {
+            const d = new Date(new Date(last.date).getTime() + i * 86400000)
+            wData.push({ date: d.toISOString().split('T')[0], forecast: Math.round((last.weight - rate * i) * 10) / 10 })
+          }
+        }
+      }
+      setWeightData(wData)
+
+      // Heat map: last 30 days compliance
+      const entries30 = await supabase.from('food_entries').select('date,calories,protein').eq('user_id', user.id).gte('date', days30)
+      const dailyTotals: Record<string, { cal: number; pro: number }> = {}
+      ;(entries30.data || []).forEach((e: any) => {
+        if (!dailyTotals[e.date]) dailyTotals[e.date] = { cal: 0, pro: 0 }
+        dailyTotals[e.date].cal += e.calories || 0
+        dailyTotals[e.date].pro += e.protein || 0
+      })
+      const heat = []
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000)
+        const ds = d.toISOString().split('T')[0]
+        const t = dailyTotals[ds]
+        let score = 0
+        if (t) {
+          const calPct = t.cal / (goalsRes.data?.calories || 1650)
+          const proPct = t.pro / (goalsRes.data?.protein || 200)
+          if (calPct >= 0.85 && calPct <= 1.1) score += 1
+          if (proPct >= 0.85) score += 1
+        }
+        heat.push({ date: ds, day: d.getDate(), score, dow: d.getDay() })
+      }
+      setHeatData(heat)
+    }
+    load()
+  }, [user])
+
+  const heatColor = (score: number) => {
+    if (score === 0) return SURFACE2
+    if (score === 1) return '#d4a01744'
+    return '#22c55e88'
   }
+
   return (
-    <div style={{minHeight:'100%',background:DARK,paddingBottom:32}}>
-      <div style={{padding:'20px 16px 8px'}}>
-        <h1 style={{margin:0,fontSize:24,fontWeight:800,color:TEXT}}>Trends</h1>
-        <p style={{margin:'4px 0 0',fontSize:13,color:MUTED}}>7-day overview · ask Claude for deeper analysis</p>
-      </div>
-      <div style={{margin:'12px',background:SURFACE,borderRadius:16,border:'1px solid '+BORDER,padding:'14px 12px'}}>
-        <div style={{fontSize:11,color:MUTED,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10,fontWeight:600}}>7-Day Average</div>
-        <div style={{display:'flex',gap:8}}>
-          <StatCard label="Calories" value={weekAvg.calories} goal={goals.calories}/>
-          <StatCard label="Protein" value={weekAvg.protein} unit="g" goal={goals.protein}/>
-          <StatCard label="Carbs" value={weekAvg.carbs} unit="g" goal={goals.carbs}/>
-          <StatCard label="Fat" value={weekAvg.fat} unit="g" goal={goals.fat}/>
-        </div>
-      </div>
-      <div style={{margin:'12px',background:SURFACE,borderRadius:16,border:'1px solid '+BORDER,padding:'14px 12px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
-          <span style={{fontSize:11,color:MUTED,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600}}>Calories — 7 Days</span>
-          <span style={{fontSize:10,color:MUTED}}>goal: {goals.calories}</span>
-        </div>
-        <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={weekData} margin={{top:0,right:0,left:-20,bottom:0}}>
-            <XAxis dataKey="day" tick={{fill:MUTED,fontSize:11}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:MUTED,fontSize:10}} axisLine={false} tickLine={false}/>
-            <Tooltip content={<TT/>} cursor={{fill:'rgba(255,255,255,0.03)'}}/>
-            <Bar dataKey="Calories" fill={GOLD} radius={[4,4,0,0]} maxBarSize={32}/>
+    <div style={{ padding: '0 16px' }}>
+      <div style={{ fontSize: 16, fontWeight: 600, color: TEXT, marginBottom: 12 }}>Trends</div>
+
+      {/* 7-Day Macro Chart */}
+      <div style={{ background: SURFACE, borderRadius: 12, padding: '12px 8px', marginBottom: 16, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 8, paddingLeft: 8 }}>7-Day Calories</div>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={weekData}>
+            <XAxis dataKey="day" tick={{ fill: MUTED, fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis hide />
+            <Tooltip
+              contentStyle={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 12, color: TEXT }}
+              labelStyle={{ color: GOLD }}
+            />
+            <Bar dataKey="calories" fill={GOLD} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div style={{margin:'12px',background:SURFACE,borderRadius:16,border:'1px solid '+BORDER,padding:'14px 12px'}}>
-        <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
-          <span style={{fontSize:11,color:MUTED,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600}}>Protein — 7 Days</span>
-          <span style={{fontSize:10,color:MUTED}}>goal: {goals.protein}g</span>
-        </div>
-        <ResponsiveContainer width="100%" height={140}>
-          <BarChart data={weekData} margin={{top:0,right:0,left:-20,bottom:0}}>
-            <XAxis dataKey="day" tick={{fill:MUTED,fontSize:11}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:MUTED,fontSize:10}} axisLine={false} tickLine={false}/>
-            <Tooltip content={<TT/>} cursor={{fill:'rgba(255,255,255,0.03)'}}/>
-            <Bar dataKey="Protein" fill="#10b981" radius={[4,4,0,0]} maxBarSize={32}/>
+
+      {/* Protein trend */}
+      <div style={{ background: SURFACE, borderRadius: 12, padding: '12px 8px', marginBottom: 16, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 8, paddingLeft: 8 }}>7-Day Protein (g)</div>
+        <ResponsiveContainer width="100%" height={120}>
+          <BarChart data={weekData}>
+            <XAxis dataKey="day" tick={{ fill: MUTED, fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis hide />
+            <Tooltip contentStyle={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 12, color: TEXT }} />
+            <ReferenceLine y={goals.protein} stroke="#22c55e44" strokeDasharray="3 3" />
+            <Bar dataKey="protein" fill="#22c55e" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <div style={{margin:'12px',background:SURFACE,borderRadius:16,border:'1px solid '+BORDER,padding:'14px 12px'}}>
-        <div style={{fontSize:11,color:MUTED,textTransform:'uppercase',letterSpacing:'0.08em',fontWeight:600,marginBottom:12}}>Weight — 30 Days</div>
-        <div style={{display:'flex',gap:8,marginBottom:14}}>
-          <input type="number" value={weightInput} onChange={e=>setWeightInput(e.target.value)} placeholder="Today's weight (lbs)" style={{flex:1,background:SURFACE2,border:'1px solid '+BORDER,borderRadius:10,padding:'10px 14px',color:TEXT,fontSize:14,outline:'none'}}/>
-          <button onClick={logWeight} disabled={saving||!weightInput} style={{padding:'10px 16px',background:GOLD,border:'none',borderRadius:10,color:DARK,fontWeight:700,fontSize:14,cursor:weightInput?'pointer':'default',opacity:weightInput?1:0.5}}>{saving?'...':'Log'}</button>
-        </div>
-        {weightData.length>1?(
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={weightData} margin={{top:4,right:4,left:-20,bottom:0}}>
-              <CartesianGrid stroke={BORDER} strokeDasharray="3 3" vertical={false}/>
-              <XAxis dataKey="date" tick={{fill:MUTED,fontSize:10}} axisLine={false} tickLine={false}/>
-              <YAxis tick={{fill:MUTED,fontSize:10}} axisLine={false} tickLine={false} domain={['dataMin - 2','dataMax + 2']}/>
-              <Tooltip contentStyle={{background:SURFACE2,border:'1px solid '+BORDER,borderRadius:10}} labelStyle={{color:TEXT}} itemStyle={{color:GOLD}}/>
-              <Line type="monotone" dataKey="weight" stroke={GOLD} strokeWidth={2} dot={{fill:GOLD,r:3}} activeDot={{r:5}}/>
+
+      {/* Weight Chart with Forecast */}
+      {weightData.length > 0 && (
+        <div style={{ background: SURFACE, borderRadius: 12, padding: '12px 8px', marginBottom: 16, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 8, paddingLeft: 8 }}>Weight Trend</div>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={weightData}>
+              <XAxis dataKey="date" tick={{ fill: MUTED, fontSize: 9 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis domain={['auto', 'auto']} tick={{ fill: MUTED, fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+              <Tooltip contentStyle={{ background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 12, color: TEXT }} />
+              <Line type="monotone" dataKey="weight" stroke={GOLD} strokeWidth={2} dot={{ r: 3, fill: GOLD }} connectNulls={false} />
+              <Line type="monotone" dataKey="forecast" stroke={GOLD} strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls={false} />
+              {CHECKPOINTS.map(cp => (
+                <ReferenceLine key={cp.weight} y={cp.weight} stroke="#22c55e44" strokeDasharray="3 3" label={{ value: cp.label, fill: MUTED, fontSize: 9, position: 'right' }} />
+              ))}
             </LineChart>
           </ResponsiveContainer>
-        ):<div style={{textAlign:'center',padding:'24px 0',color:MUTED,fontSize:13}}>{weightData.length===1?'Current: '+weightData[0].weight+' lbs · Log more to see trend':'Log weight to track progress toward 230 lbs'}</div>}
-        {weightData.length>0&&<div style={{display:'flex',justifyContent:'space-between',marginTop:10,padding:'0 4px'}}>
-          <div style={{fontSize:12,color:MUTED}}>Current: <span style={{color:GOLD,fontWeight:700}}>{weightData[weightData.length-1]?.weight} lbs</span></div>
-          <div style={{fontSize:12,color:MUTED}}>Goal: <span style={{color:'#10b981',fontWeight:700}}>230 lbs</span></div>
-        </div>}
-      </div>
-      <div style={{margin:'12px',background:'rgba(212,160,23,0.06)',border:'1px solid rgba(212,160,23,0.2)',borderRadius:16,padding:'14px 16px',textAlign:'center'}}>
-        <div style={{fontSize:13,color:MUTED}}>Ask: <em style={{color:GOLD}}>"How's my week?"</em> or <em style={{color:GOLD}}>"Export my data"</em></div>
+        </div>
+      )}
+
+      {/* Compliance Heat Map */}
+      <div style={{ background: SURFACE, borderRadius: 12, padding: '12px 12px', marginBottom: 16, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: MUTED, marginBottom: 8 }}>30-Day Compliance</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+          {heatData.map((d, i) => (
+            <div key={i} title={`${d.date}: ${d.score === 0 ? 'No data' : d.score === 1 ? 'Partial' : 'On target'}`} style={{
+              width: 18, height: 18, borderRadius: 3,
+              background: heatColor(d.score),
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 8, color: d.score > 0 ? TEXT : MUTED,
+            }}>
+              {d.day}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 9, color: MUTED }}>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: SURFACE2, marginRight: 3, verticalAlign: 'middle' }} />No data</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#d4a01744', marginRight: 3, verticalAlign: 'middle' }} />Partial</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#22c55e88', marginRight: 3, verticalAlign: 'middle' }} />On target</span>
+        </div>
       </div>
     </div>
   )

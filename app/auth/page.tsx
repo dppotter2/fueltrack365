@@ -1,154 +1,90 @@
 'use client'
 
+import { useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
 export const dynamic = 'force-dynamic'
 
-
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase-browser'
-
-const GOLD = '#d4a017'
-const DARK = '#0d1117'
-const SURFACE = '#161b22'
-const SURFACE2 = '#21262d'
-const BORDER = '#30363d'
-const TEXT = '#f0f0f0'
-const MUTED = '#888'
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function AuthPage() {
-  const router = useRouter()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(false)
   const [error, setError] = useState('')
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [loading, setLoading] = useState(false)
 
   const handleAuth = async () => {
-    if (!email || !password) return
     setLoading(true)
     setError('')
-
-    try {
-      if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password })
-        if (error) throw error
-      }
-      router.push('/log')
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed')
+    const fn = isSignUp ? supabase.auth.signUp : supabase.auth.signInWithPassword
+    const { error } = await fn.call(supabase.auth, { email, password })
+    if (error) {
+      setError(error.message)
       setLoading(false)
+    } else {
+      window.location.href = '/log'
     }
   }
 
   return (
     <div style={{
-      minHeight: '100vh', background: DARK, display: 'flex',
-      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: '24px',
+      minHeight: '100vh', background: '#0d1117',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 20,
     }}>
-      {/* Logo */}
-      <div style={{ textAlign: 'center', marginBottom: 40 }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: '50%', background: GOLD,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 16px', fontSize: 28,
-        }}>
-          ✦
-        </div>
-        <div style={{ fontSize: 28, fontWeight: 900, color: TEXT, letterSpacing: '-0.5px' }}>
-          FuelTrack <span style={{ color: GOLD }}>365</span>
-        </div>
-        <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>
-          Claude-powered macro tracking
-        </div>
-      </div>
-
-      {/* Card */}
       <div style={{
-        width: '100%', maxWidth: 360,
-        background: SURFACE, border: `1px solid ${BORDER}`,
-        borderRadius: 20, padding: '28px 24px',
+        width: '100%', maxWidth: 380, textAlign: 'center',
       }}>
-        <h2 style={{ margin: '0 0 20px', fontSize: 20, fontWeight: 700, color: TEXT }}>
-          {mode === 'login' ? 'Sign In' : 'Create Account'}
-        </h2>
+        <div style={{ fontSize: 32, fontWeight: 700, color: '#d4a017', marginBottom: 4 }}>
+          FuelTrack 365
+        </div>
+        <div style={{ fontSize: 13, color: '#6b7f99', marginBottom: 32 }}>
+          AI-Powered Macro Tracking
+        </div>
 
-        {error && (
-          <div style={{
-            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 10, padding: '10px 14px', marginBottom: 16,
-            fontSize: 13, color: '#ef4444',
-          }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-            Email
-          </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input
-            type="email"
-            value={email}
+            type="email" placeholder="Email" value={email}
             onChange={e => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
             style={{
-              display: 'block', width: '100%', marginTop: 6,
-              background: SURFACE2, border: `1px solid ${BORDER}`,
-              borderRadius: 12, padding: '12px 14px',
-              color: TEXT, fontSize: 15, outline: 'none', boxSizing: 'border-box',
+              background: '#161b22', border: '1px solid #21262d', borderRadius: 10,
+              padding: '14px 16px', color: '#e6e1d6', fontSize: 15, outline: 'none',
             }}
           />
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-            Password
-          </label>
           <input
-            type="password"
-            value={password}
+            type="password" placeholder="Password" value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••"
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             onKeyDown={e => e.key === 'Enter' && handleAuth()}
             style={{
-              display: 'block', width: '100%', marginTop: 6,
-              background: SURFACE2, border: `1px solid ${BORDER}`,
-              borderRadius: 12, padding: '12px 14px',
-              color: TEXT, fontSize: 15, outline: 'none', boxSizing: 'border-box',
+              background: '#161b22', border: '1px solid #21262d', borderRadius: 10,
+              padding: '14px 16px', color: '#e6e1d6', fontSize: 15, outline: 'none',
             }}
           />
+          {error && <div style={{ color: '#f87171', fontSize: 13 }}>{error}</div>}
+          <button
+            onClick={handleAuth} disabled={loading}
+            style={{
+              background: '#d4a017', border: 'none', borderRadius: 10,
+              padding: '14px 16px', color: '#0d1117', fontSize: 15, fontWeight: 600,
+              cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? '...' : isSignUp ? 'Sign Up' : 'Sign In'}
+          </button>
         </div>
 
         <button
-          onClick={handleAuth}
-          disabled={loading || !email || !password}
+          onClick={() => setIsSignUp(!isSignUp)}
           style={{
-            width: '100%', padding: '14px',
-            background: email && password ? GOLD : SURFACE2,
-            border: 'none', borderRadius: 14,
-            color: email && password ? DARK : MUTED,
-            fontWeight: 800, fontSize: 16, cursor: email && password ? 'pointer' : 'default',
-            transition: 'background 0.2s',
+            background: 'none', border: 'none', color: '#6b7f99',
+            fontSize: 13, marginTop: 16, cursor: 'pointer',
           }}
         >
-          {loading ? 'Loading...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-        </button>
-
-        <button
-          onClick={() => { setMode(m => m === 'login' ? 'signup' : 'login'); setError('') }}
-          style={{
-            width: '100%', marginTop: 14, background: 'none', border: 'none',
-            color: MUTED, fontSize: 13, cursor: 'pointer', padding: '4px',
-          }}
-        >
-          {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+          {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
         </button>
       </div>
     </div>

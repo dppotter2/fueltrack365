@@ -1,66 +1,139 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase-server'
-import { categorizeFood } from '@/lib/categorize'
+import { createClient } from '@supabase/supabase-js'
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { cookie: req.headers.get('cookie') || '' } } }
+    )
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const body = await req.json()
-    const { name, serving, calories, protein, carbs, fat, fiber, sodium, category, date } = body
-    const logDate = date || new Date().toLocaleDateString('en-CA')
-    const cat = category || categorizeFood(name, calories, protein)
-    const { data, error } = await supabase.from('food_entries').insert({
-      user_id: user.id, date: logDate,
-      name, serving: serving || '1 serving',
-      calories: Math.round(calories || 0), protein: Math.round(protein || 0),
-      carbs: Math.round(carbs || 0), fat: Math.round(fat || 0),
-      fiber: Math.round(fiber || 0), sodium: Math.round(sodium || 0),
-      category: cat, meal_slot: 'log',
-    }).select().single()
-    if (error) throw error
-    return NextResponse.json({ success: true, entry: data })
-  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
-}
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-export async function DELETE(req: NextRequest) {
-  try {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const { id } = await req.json()
-    const { error } = await supabase.from('food_entries').delete().eq('id', id).eq('user_id', user.id)
-    if (error) throw error
-    return NextResponse.json({ success: true })
-  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
-}
-
-// Save recipe - writes to real DB schema with flat columns
-export async function PUT(req: NextRequest) {
-  try {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const body = await req.json()
-    const { name, servings = 6, macros_per_serving, ingredients, steps, cuisine, cooking_method, tags } = body
-    const m = macros_per_serving || {}
-    const { data, error } = await supabase.from('recipes').insert({
-      user_id: user.id, name,
-      servings: 6,
-      calories_per_serving: Math.round(m.calories || 0),
-      protein_per_serving: Math.round(m.protein || 0),
-      carbs_per_serving: Math.round(m.carbs || 0),
-      fat_per_serving: Math.round(m.fat || 0),
-      fiber_per_serving: Math.round(m.fiber || 0),
-      sodium_per_serving: Math.round(m.sodium || 0),
-      ingredients: ingredients || [],
-      steps: steps || [],
-      cuisine: cuisine || '',
-      cooking_method: cooking_method || '',
-      tags: tags || [],
-    }).select().single()
-    if (error) throw error
-    return NextResponse.json({ success: true, recipe: data })
-  } catch (err: any) { return NextResponse.json({ error: err.message }, { status: 500 }) }
+    const { action } = body
+
+    if (action === 'log') {
+      const { name, serving, calories, protein, carbs, fat, fiber, sodium, category, date } = body
+      const { data, error } = await supabase.from('food_entries').insert({
+        user_id: user.id,
+        date: date || new Date().toISOString().split('T')[0],
+        name, serving,
+        calories: Math.round(Number(calories) || 0),
+        protein: Math.round(Number(protein) || 0),
+        carbs: Math.round(Number(carbs) || 0),
+        fat: Math.round(Number(fat) || 0),
+        fiber: Math.round(Number(fiber) || 0),
+        sodium: Math.round(Number(sodium) || 0),
+        category: category || 'snack',
+      }).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ entry: data })
+    }
+
+    if (action === 'tally') {
+      const { name, add_calories, add_protein, add_carbs, add_fat, add_fiber, add_sodium, date } = body
+      const targetDate = date || new Date().toISOString().split('T')[0]
+      const { data: existing } = await supabase
+        .from('food_entries')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('date', targetDate)
+        .ilike('name', `%${name}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (existing) {
+        const { data, error } = await supabase.from('food_entries').update({
+          calories: existing.calories + Math.round(Number(add_calories) || 0),
+          protein: existing.protein + Math.round(Number(add_protein) || 0),
+          carbs: existing.carbs + Math.round(Number(add_carbs) || 0),
+          fat: existing.fat + Math.round(Number(add_fat) || 0),
+          fiber: existing.fiber + Math.round(Number(add_fiber) || 0),
+          sodium: existing.sodium + Math.round(Number(add_sodium) || 0),
+        }).eq('id', existing.id).select().single()
+        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        return NextResponse.json({ entry: data, tallied: true })
+      }
+      return NextResponse.json({ error: 'Entry not found for tally' }, { status: 404 })
+    }
+
+    if (action === 'delete') {
+      const { id } = body
+      const { error } = await supabase.from('food_entries').delete().eq('id', id).eq('user_id', user.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ deleted: true })
+    }
+
+    if (action === 'water') {
+      const { amount_oz, date } = body
+      const { data, error } = await supabase.from('water_entries').insert({
+        user_id: user.id,
+        date: date || new Date().toISOString().split('T')[0],
+        amount_oz: Math.round(Number(amount_oz) || 0),
+      }).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ entry: data })
+    }
+
+    if (action === 'weight') {
+      const { weight, notes, date } = body
+      const { data, error } = await supabase.from('weight_entries').insert({
+        user_id: user.id,
+        date: date || new Date().toISOString().split('T')[0],
+        weight: Number(weight),
+        notes: notes || '',
+      }).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ entry: data })
+    }
+
+    if (action === 'recipe') {
+      const recipe = body.recipe
+      const { data, error } = await supabase.from('recipes').insert({
+        user_id: user.id,
+        name: recipe.name,
+        servings: recipe.servings || 6,
+        calories_per_serving: Math.round(Number(recipe.calories_per_serving) || 0),
+        protein_per_serving: Math.round(Number(recipe.protein_per_serving) || 0),
+        carbs_per_serving: Math.round(Number(recipe.carbs_per_serving) || 0),
+        fat_per_serving: Math.round(Number(recipe.fat_per_serving) || 0),
+        fiber_per_serving: Math.round(Number(recipe.fiber_per_serving) || 0),
+        sodium_per_serving: Math.round(Number(recipe.sodium_per_serving) || 0),
+        ingredients: recipe.ingredients || '',
+        instructions: recipe.instructions || '',
+        cooking_method: recipe.cooking_method || '',
+        cuisine: recipe.cuisine || '',
+        protein_type: recipe.protein_type || '',
+        carb_type: recipe.carb_type || '',
+        tags: [recipe.cooking_method, recipe.cuisine, recipe.protein_type, recipe.carb_type].filter(Boolean).join(','),
+      }).select().single()
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ recipe: data })
+    }
+
+    if (action === 'goals') {
+      const { field, old_value, new_value, reason } = body
+      // Log the change
+      await supabase.from('profile_changes').insert({
+        user_id: user.id,
+        field, old_value: String(old_value), new_value: String(new_value), reason: reason || '',
+      })
+      // Update the goals
+      await supabase.from('user_goals').upsert({
+        user_id: user.id,
+        [field]: Number(new_value),
+      }, { onConflict: 'user_id' })
+      return NextResponse.json({ updated: true })
+    }
+
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (error: any) {
+    console.error('Log food error:', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 }

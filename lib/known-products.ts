@@ -1,5 +1,5 @@
 export interface KnownProduct {
-  name: string
+  names: string[]
   serving: string
   calories: number
   protein: number
@@ -7,81 +7,100 @@ export interface KnownProduct {
   fat: number
   fiber: number
   sodium: number
-  category: 'food' | 'drink'
-  aliases: string[]
+  category: 'meal' | 'drink' | 'snack'
 }
 
 export const KNOWN_PRODUCTS: KnownProduct[] = [
   {
-    name: 'Core Power Elite Chocolate (14 fl oz)',
-    serving: '14 fl oz bottle',
+    names: ['fairlife core power elite', 'core power elite', 'core power', 'fairlife', 'protein shake'],
+    serving: '1 bottle (14 fl oz)',
     calories: 230, protein: 42, carbs: 9, fat: 8, fiber: 0, sodium: 270,
-    category: 'drink',
-    aliases: ['core power', 'core power elite', 'protein shake', 'chocolate shake', 'my shake', 'my protein shake', 'chocolate core power'],
+    category: 'drink'
   },
   {
-    name: 'Core Power Elite Vanilla (14 fl oz)',
-    serving: '14 fl oz bottle',
-    calories: 230, protein: 42, carbs: 9, fat: 8, fiber: 0, sodium: 270,
-    category: 'drink',
-    aliases: ['vanilla core power', 'vanilla shake', 'vanilla protein shake'],
-  },
-  {
-    name: 'Kaged Hydration Sugar Free (1 scoop)',
+    names: ['kaged hydration', 'kaged', 'kaged strawberry', 'kaged lemonade', 'kaged sugar free', 'hydration'],
     serving: '1 scoop',
     calories: 5, protein: 0, carbs: 1, fat: 0, fiber: 0, sodium: 105,
-    category: 'drink',
-    aliases: ['kaged', 'kaged hydration', 'my kaged', 'strawberry kaged', 'kaged drink', 'kaged electrolyte'],
+    category: 'drink'
   },
   {
-    name: 'Taste Salud Horchata Packet',
+    names: ['taste salud horchata', 'salud horchata', 'horchata packet', 'horchata'],
     serving: '1 packet',
     calories: 10, protein: 0, carbs: 3, fat: 0, fiber: 0, sodium: 130,
-    category: 'drink',
-    aliases: ['horchata', 'taste salud', 'horchata packet', 'salud horchata'],
+    category: 'drink'
   },
   {
-    name: 'Quest Bar',
-    serving: '1 bar (60g)',
-    calories: 190, protein: 21, carbs: 21, fat: 7, fiber: 14, sodium: 260,
-    category: 'food',
-    aliases: ['quest bar', 'quest protein bar', 'quest'],
+    names: ['quest bar', 'quest protein bar'],
+    serving: '1 bar',
+    calories: 200, protein: 21, carbs: 22, fat: 8, fiber: 14, sodium: 280,
+    category: 'snack'
   },
   {
-    name: 'Quest Crispy Chocolate Brownie Bar',
-    serving: '1 bar (58g)',
-    calories: 190, protein: 15, carbs: 26, fat: 6, fiber: 9, sodium: 230,
-    category: 'food',
-    aliases: ['quest crispy', 'quest crispy brownie', 'quest crispy chocolate brownie'],
+    names: ['quest crispy', 'quest crispy bar'],
+    serving: '1 bar',
+    calories: 240, protein: 20, carbs: 26, fat: 10, fiber: 2, sodium: 250,
+    category: 'snack'
   },
   {
-    name: 'Quest Overload Chocolate Explosion Bar',
-    serving: '1 bar (65g)',
-    calories: 230, protein: 20, carbs: 27, fat: 9, fiber: 10, sodium: 170,
-    category: 'food',
-    aliases: ['quest overload', 'quest chocolate explosion', 'quest overload choc'],
+    names: ['barebells cookie dough', 'barebells', 'barebells bar'],
+    serving: '1 bar',
+    calories: 210, protein: 20, carbs: 18, fat: 9, fiber: 3, sodium: 150,
+    category: 'snack'
   },
   {
-    name: 'Barebells Cookie Dough Bar',
-    serving: '1 bar (55g)',
-    calories: 200, protein: 20, carbs: 18, fat: 7, fiber: 3, sodium: 170,
-    category: 'food',
-    aliases: ['barebells', 'barebells cookie dough', 'cookie dough bar'],
+    names: ['halo mandarin', 'halo mandarins', 'clementine', 'clementines', 'mandarin', 'mandarins'],
+    serving: '2 mandarins',
+    calories: 80, protein: 1, carbs: 18, fat: 0, fiber: 3, sodium: 0,
+    category: 'snack'
   },
   {
-    name: 'Halo Mandarin (Clementine)',
-    serving: '1 fruit (~74g)',
-    calories: 35, protein: 1, carbs: 9, fat: 0, fiber: 1, sodium: 1,
-    category: 'food',
-    aliases: ['clementine', 'halo', 'halo mandarin', 'mandarin', 'clementines', 'halos'],
+    names: ['taste flavor co korean bbq', 'korean bbq sauce'],
+    serving: '1 tbsp', calories: 10, protein: 0, carbs: 2, fat: 0, fiber: 0, sodium: 180,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co chipotle ranch', 'chipotle ranch'],
+    serving: '1 tbsp', calories: 5, protein: 0, carbs: 1, fat: 0, fiber: 0, sodium: 160,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co garlic parm', 'garlic parm sauce'],
+    serving: '1 tbsp', calories: 10, protein: 0, carbs: 2, fat: 0, fiber: 0, sodium: 170,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co buffalo', 'buffalo sauce'],
+    serving: '1 tbsp', calories: 5, protein: 0, carbs: 1, fat: 0, fiber: 0, sodium: 200,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co teriyaki', 'teriyaki sauce'],
+    serving: '1 tbsp', calories: 15, protein: 0, carbs: 3, fat: 0, fiber: 0, sodium: 190,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co honey mustard', 'honey mustard sauce'],
+    serving: '1 tbsp', calories: 10, protein: 0, carbs: 2, fat: 0, fiber: 0, sodium: 150,
+    category: 'meal'
+  },
+  {
+    names: ['taste flavor co sweet chili', 'sweet chili sauce'],
+    serving: '1 tbsp', calories: 15, protein: 0, carbs: 3, fat: 0, fiber: 0, sodium: 160,
+    category: 'meal'
+  },
+  {
+    names: ['a taste of thai rice noodles', 'rice noodles linguine', 'thai rice noodles'],
+    serving: '2 oz dry',
+    calories: 190, protein: 4, carbs: 45, fat: 0, fiber: 0, sodium: 30,
+    category: 'meal'
   },
 ]
 
 export function findKnownProduct(query: string): KnownProduct | null {
   const q = query.toLowerCase().trim()
-  for (const product of KNOWN_PRODUCTS) {
-    if (product.aliases.some(alias => q.includes(alias) || alias.includes(q))) {
-      return product
+  for (const p of KNOWN_PRODUCTS) {
+    for (const name of p.names) {
+      if (q.includes(name) || name.includes(q)) return p
     }
   }
   return null

@@ -1,387 +1,595 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
+
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase-browser'
-import { DEFAULT_GOALS, MacroGoals, MacroTotals, ChatMessage, FoodEntry } from '@/lib/types'
+import { usePathname } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
 
-const GOLD='#d4a017',DARK='#0d1117',SURFACE='#161b22',SURFACE2='#21262d'
-const BORDER='#30363d',TEXT='#f0f0f0',MUTED='#8b949e'
-const GREEN='#10b981',BLUE='#3b82f6',ORANGE='#f59e0b',RED='#ef4444',PURPLE='#8b5cf6'
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
-function localDate() {
-  const d=new Date()
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
-}
-function fmtDateTime(d: Date) {
-  const days=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-  const months=['January','February','March','April','May','June','July','August','September','October','November','December']
-  const h=String(d.getHours()).padStart(2,'0'), m=String(d.getMinutes()).padStart(2,'0')
-  return days[d.getDay()]+', '+months[d.getMonth()]+' '+d.getDate()+'  '+h+':'+m
-}
+const DARK = '#0d1117'
+const SURFACE = '#161b22'
+const SURFACE2 = '#21262d'
+const BORDER = '#30363d'
+const GOLD = '#d4a017'
+const TEXT = '#e6e1d6'
+const MUTED = '#6b7f99'
+const BLUE = '#3b82f6'
 
-function MacroRing({label,value,goal,color,unit='g'}:{label:string;value:number;goal:number;color:string;unit?:string}) {
-  const pct=Math.min(100,(value/Math.max(goal,1))*100),over=value>goal
-  const size=72,r=28,circ=2*Math.PI*r,dash=(pct/100)*circ
-  return (
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,flex:1}}>
-      <div style={{position:'relative',width:size,height:size}}>
-        <svg width={size} height={size} style={{transform:'rotate(-90deg)',display:'block'}}>
-          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={SURFACE2} strokeWidth={5}/>
-          <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={over?RED:color} strokeWidth={5}
-            strokeDasharray={dash+' '+circ} strokeLinecap="round"
-            style={{transition:'stroke-dasharray 0.5s ease'}}/>
-        </svg>
-        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-          <span style={{fontSize:14,fontWeight:800,color:over?RED:TEXT,lineHeight:1}}>{value}</span>
-          <span style={{fontSize:9,color:MUTED,lineHeight:1.3}}>{unit}</span>
-        </div>
-      </div>
-      <div style={{textAlign:'center',lineHeight:1.3}}>
-        <div style={{fontSize:10,color:MUTED,textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:600}}>{label}</div>
-        <div style={{fontSize:10,color:over?RED:color,fontWeight:700}}>{over?'+':'−'}{Math.abs(goal-value)}{unit}</div>
-      </div>
-    </div>
-  )
-}
+const DEFAULT_GOALS = { calories: 1650, protein: 200, carbs: 140, fat: 40, fiber: 33, sodium: 2000 }
 
-function NavBar({active}:{active:string}) {
-  const router=useRouter()
-  const LogIcon=(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?GOLD:MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>)
-  const TrendsIcon=(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?GOLD:MUTED} strokeWidth="2" strokeLinecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>)
-  const RecipesIcon=(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?GOLD:MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3zm0 0v7"/></svg>)
-  const ProfileIcon=(a:boolean)=>(<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={a?GOLD:MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>)
-  const tabs=[{id:'log',label:'Log',icon:LogIcon},{id:'trends',label:'Trends',icon:TrendsIcon},{id:'recipes',label:'Recipes',icon:RecipesIcon},{id:'profile',label:'Profile',icon:ProfileIcon}]
-  return (
-    <nav style={{position:'fixed',bottom:0,left:0,right:0,zIndex:100,background:SURFACE,borderTop:'1px solid '+BORDER,display:'flex',paddingBottom:'env(safe-area-inset-bottom)'}}>
-      {tabs.map(tab=>{const a=active===tab.id;return(
-        <button key={tab.id} onClick={()=>router.push('/'+tab.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0 8px',background:'none',border:'none',color:a?GOLD:MUTED,fontSize:10,fontWeight:a?700:400,letterSpacing:'0.05em',textTransform:'uppercase',gap:3,cursor:'pointer'}}>
-          {tab.icon(a)}{tab.label}
-        </button>
-      )})}
-    </nav>
-  )
-}
+interface Entry { id: string; name: string; serving: string; calories: number; protein: number; carbs: number; fat: number; fiber: number; sodium: number; category: string; date: string; created_at: string }
+interface Msg { role: 'user' | 'assistant'; content: string }
 
-function MsgContent({text,isUser}:{text:string;isUser:boolean}) {
-  if(isUser) return <span style={{fontSize:15,lineHeight:1.5}}>{text}</span>
-  const lines=text.split('\n')
-  return (
-    <div style={{fontSize:14,lineHeight:1.6}}>
-      {lines.map((line,i)=>{
-        if(!line.trim()) return <div key={i} style={{height:5}}/>
-        const bullet=/^[•\-\*] /.test(line.trim())
-        const raw=bullet?line.trim().replace(/^[•\-\*] /,''):line
-        const parts=raw.split(/(\*\*[^*]+\*\*)/g)
-        const rendered=parts.map((p,j)=>p.startsWith('**')&&p.endsWith('**')?<strong key={j} style={{color:GOLD}}>{p.slice(2,-2)}</strong>:<span key={j}>{p}</span>)
-        return bullet?<div key={i} style={{display:'flex',gap:7,marginBottom:2}}><span style={{color:GOLD,flexShrink:0}}>&bull;</span><span>{rendered}</span></div>:<div key={i}>{rendered}</div>
-      })}
-    </div>
-  )
-}
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const [user, setUser] = useState<any>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [messages, setMessages] = useState<Msg[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [entries, setEntries] = useState<Entry[]>([])
+  const [goals, setGoals] = useState(DEFAULT_GOALS)
+  const [waterOz, setWaterOz] = useState(0)
+  const [viewingDate, setViewingDate] = useState(new Date().toISOString().split('T')[0])
+  const [frequents, setFrequents] = useState<any[]>([])
+  const [library, setLibrary] = useState<any[]>([])
+  const [recipes, setRecipes] = useState<any[]>([])
+  const [recentEntries, setRecentEntries] = useState<any[]>([])
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-function ClaudeChat({todayEntries,recentEntries,totals,goals,date,currentPage,onLogFoodRef,onRefresh}:{
-  todayEntries:FoodEntry[];recentEntries:FoodEntry[];totals:MacroTotals;goals:MacroGoals
-  date:string;currentPage:string;onLogFoodRef:React.MutableRefObject<(d:any)=>Promise<any>>;onRefresh:()=>void
-}) {
-  const supabase=createClient()
-  const [open,setOpen]=useState(false)
-  const [messages,setMessages]=useState<ChatMessage[]>([])
-  const [input,setInput]=useState('')
-  const [loading,setLoading]=useState(false)
-  const [historyLoaded,setHistoryLoaded]=useState(false)
-  const bottomRef=useRef<HTMLDivElement>(null)
-  const inputRef=useRef<HTMLTextAreaElement>(null)
-  // Keep refs for callbacks so send() never has stale closures
-  const onRefreshRef=useRef(onRefresh)
-  useEffect(()=>{ onRefreshRef.current=onRefresh },[onRefresh])
+  // Auth
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setUser(data.user)
+      else window.location.href = '/auth'
+    })
+  }, [])
 
-  // Load history once on mount — NOT gated on open state
-  // This prevents history from wiping on page refresh
-  useEffect(()=>{
-    if(historyLoaded) return
-    ;(async()=>{
+  // Listen for date changes from log page
+  useEffect(() => {
+    const handler = (e: any) => setViewingDate(e.detail)
+    window.addEventListener('fueltrack:viewdate', handler)
+    return () => window.removeEventListener('fueltrack:viewdate', handler)
+  }, [])
+
+  // Parallel data fetch
+  const fetchAll = useCallback(async () => {
+    if (!user) return
+    const today = viewingDate
+    const weekAgo = new Date(new Date(today).getTime() - 7 * 86400000).toISOString().split('T')[0]
+
+    const [entriesRes, waterRes, goalsRes, libRes, recRes, recentRes] = await Promise.all([
+      supabase.from('food_entries').select('*').eq('user_id', user.id).eq('date', today).order('created_at'),
+      supabase.from('water_entries').select('amount_oz').eq('user_id', user.id).eq('date', today),
+      supabase.from('user_goals').select('*').eq('user_id', user.id).single(),
+      supabase.from('food_library').select('*').eq('user_id', user.id).order('times_logged', { ascending: false }).limit(30),
+      supabase.from('recipes').select('*').eq('user_id', user.id).order('name'),
+      supabase.from('food_entries').select('*').eq('user_id', user.id).gte('date', weekAgo).order('created_at', { ascending: false }),
+    ])
+
+    setEntries(entriesRes.data || [])
+    setWaterOz((waterRes.data || []).reduce((s: number, e: any) => s + (e.amount_oz || 0), 0))
+    if (goalsRes.data) {
+      setGoals({
+        calories: goalsRes.data.calories || DEFAULT_GOALS.calories,
+        protein: goalsRes.data.protein || DEFAULT_GOALS.protein,
+        carbs: goalsRes.data.carbs || DEFAULT_GOALS.carbs,
+        fat: goalsRes.data.fat || DEFAULT_GOALS.fat,
+        fiber: goalsRes.data.fiber || DEFAULT_GOALS.fiber,
+        sodium: goalsRes.data.sodium || DEFAULT_GOALS.sodium,
+      })
+    }
+    setLibrary(libRes.data || [])
+    setRecipes(recRes.data || [])
+    setRecentEntries(recentRes.data || [])
+
+    // Build frequents from recent
+    const freq: Record<string, number> = {}
+    ;(recentRes.data || []).forEach((e: any) => { freq[e.name] = (freq[e.name] || 0) + 1 })
+    setFrequents(Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name))
+  }, [user, viewingDate])
+
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Listen for refresh events
+  useEffect(() => {
+    const handler = () => fetchAll()
+    window.addEventListener('fueltrack:refresh', handler)
+    return () => window.removeEventListener('fueltrack:refresh', handler)
+  }, [fetchAll])
+
+  // Load chat history
+  useEffect(() => {
+    if (!user) return
+    supabase.from('chat_messages').select('role,content').eq('user_id', user.id)
+      .order('created_at', { ascending: false }).limit(30)
+      .then(({ data }) => {
+        if (data && data.length > 0) setMessages(data.reverse() as Msg[])
+      })
+  }, [user])
+
+  // Scroll to bottom
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  // Totals
+  const totals = entries.reduce((acc, e) => ({
+    calories: acc.calories + e.calories,
+    protein: acc.protein + e.protein,
+    carbs: acc.carbs + e.carbs,
+    fat: acc.fat + e.fat,
+    fiber: acc.fiber + e.fiber,
+    sodium: acc.sodium + e.sodium,
+  }), { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0 })
+
+  const remaining = {
+    calories: goals.calories - totals.calories,
+    protein: goals.protein - totals.protein,
+    carbs: goals.carbs - totals.carbs,
+    fat: goals.fat - totals.fat,
+  }
+
+  // Parse structured blocks from AI response
+  const parseAndExecuteBlocks = async (text: string) => {
+    // LOG block
+    const logMatch = text.match(/\|\|LOG\|\|([\s\S]+?)\|\|END\|\|/)
+    if (logMatch) {
       try {
-        const {data:{user}}=await supabase.auth.getUser()
-        if(!user) return
-        const {data,error}=await supabase
-          .from('chat_messages')
-          .select('role,content')
-          .eq('user_id',user.id)
-          .order('created_at',{ascending:true})
-          .limit(80)
-        if(error) throw error
-        if(data&&data.length>0) {
-          setMessages(data as ChatMessage[])
-        } else {
-          setMessages([{role:'assistant',content:"Hey Patrick. Talk to me naturally:\n\n**\"4 scoops strawberry kaged\"** — logged instantly\n**\"2 eggs and a ham omelet\"** — logs all items\n**\"What should I eat?\"** — meal ideas\n**\"How am I doing?\"** — today's breakdown\n\nWhat's up?"}])
+        const data = JSON.parse(logMatch[1].trim())
+        // Optimistic update
+        const tempEntry = { ...data, id: 'temp-' + Date.now(), date: viewingDate, created_at: new Date().toISOString() }
+        setEntries(prev => [...prev, tempEntry])
+        // Save to DB
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'log', ...data, date: viewingDate }),
+        })
+        if (res.ok) {
+          const { entry } = await res.json()
+          setEntries(prev => prev.map(e => e.id === tempEntry.id ? entry : e))
+          // Save to food library
+          if (!data.serving?.toLowerCase().includes('half') && !data.serving?.toLowerCase().includes('rest')) {
+            await supabase.from('food_library').upsert({
+              user_id: user.id, name: data.name, serving_size: data.serving,
+              calories: data.calories, protein: data.protein, carbs: data.carbs,
+              fat: data.fat, fiber: data.fiber || 0, sodium: data.sodium || 0,
+              times_logged: 1,
+            }, { onConflict: 'user_id,name' })
+          }
         }
-      } catch(e) {
-        console.error('History load error:', e)
-        // Don't leave blank — show welcome even on error
-        setMessages([{role:'assistant',content:"Ready to track. What did you eat?"}])
-      } finally {
-        setHistoryLoaded(true)
-      }
-    })()
-  },[historyLoaded])
+        window.dispatchEvent(new Event('fueltrack:refresh'))
+      } catch (e) { console.error('LOG parse error:', e) }
+    }
 
-  useEffect(()=>{ if(open) setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),80) },[messages,open])
+    // TALLY block
+    const tallyMatch = text.match(/\|\|TALLY\|\|([\s\S]+?)\|\|END\|\|/)
+    if (tallyMatch) {
+      try {
+        const data = JSON.parse(tallyMatch[1].trim())
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'tally', ...data, date: viewingDate }),
+        })
+        if (res.ok) window.dispatchEvent(new Event('fueltrack:refresh'))
+      } catch (e) { console.error('TALLY parse error:', e) }
+    }
 
-  const resize=()=>{ if(inputRef.current){inputRef.current.style.height='auto';inputRef.current.style.height=Math.min(inputRef.current.scrollHeight,110)+'px'} }
+    // RECIPE block
+    const recipeMatch = text.match(/\|\|RECIPE\|\|([\s\S]+?)\|\|END\|\|/)
+    if (recipeMatch) {
+      try {
+        const data = JSON.parse(recipeMatch[1].trim())
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'recipe', recipe: data }),
+        })
+        if (res.ok) window.dispatchEvent(new Event('fueltrack:refresh'))
+      } catch (e) { console.error('RECIPE parse error:', e) }
+    }
 
-  const send=useCallback(async(override?:string)=>{
-    const msg=(override||input).trim()
-    if(!msg||loading) return
-    setMessages(prev=>[...prev,{role:'user',content:msg}])
-    setInput('');setLoading(true)
-    if(inputRef.current) inputRef.current.style.height='44px'
+    // WATER block
+    const waterMatch = text.match(/\|\|WATER\|\|([\s\S]+?)\|\|END\|\|/)
+    if (waterMatch) {
+      try {
+        const data = JSON.parse(waterMatch[1].trim())
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'water', ...data, date: viewingDate }),
+        })
+        if (res.ok) {
+          setWaterOz(prev => prev + (data.amount_oz || 0))
+          window.dispatchEvent(new Event('fueltrack:refresh'))
+        }
+      } catch (e) { console.error('WATER parse error:', e) }
+    }
+
+    // WEIGHT block
+    const weightMatch = text.match(/\|\|WEIGHT\|\|([\s\S]+?)\|\|END\|\|/)
+    if (weightMatch) {
+      try {
+        const data = JSON.parse(weightMatch[1].trim())
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'weight', ...data, date: viewingDate }),
+        })
+        if (res.ok) window.dispatchEvent(new Event('fueltrack:refresh'))
+      } catch (e) { console.error('WEIGHT parse error:', e) }
+    }
+
+    // GOALS block
+    const goalsMatch = text.match(/\|\|GOALS\|\|([\s\S]+?)\|\|END\|\|/)
+    if (goalsMatch) {
+      try {
+        const data = JSON.parse(goalsMatch[1].trim())
+        const res = await fetch('/api/log-food', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'goals', ...data }),
+        })
+        if (res.ok) {
+          setGoals(prev => ({ ...prev, [data.field]: Number(data.new_value) }))
+          window.dispatchEvent(new Event('fueltrack:refresh'))
+        }
+      } catch (e) { console.error('GOALS parse error:', e) }
+    }
+  }
+
+  // Send message
+  const sendMessage = async (text?: string) => {
+    const msg = text || input.trim()
+    if (!msg || loading) return
+    setInput('')
+    const newMessages = [...messages, { role: 'user' as const, content: msg }]
+    setMessages(newMessages)
+    setLoading(true)
+
+    // Save user message to DB
+    if (user) {
+      supabase.from('chat_messages').insert({ user_id: user.id, role: 'user', content: msg }).then(() => {})
+    }
 
     try {
-      const res=await fetch('/api/chat',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          message:msg,
-          sessionHistory:messages.slice(-20),
-          todayEntries,recentEntries,goals,totals,currentPage,date
-        })
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: msg,
+          date: viewingDate,
+          page: pathname,
+          todayEntries: entries,
+          totals, goals, frequents, recentEntries, library, recipes, waterOz,
+          pastMessages: newMessages.slice(-28),
+        }),
       })
+      const data = await res.json()
+      const response = data.response || 'Something went wrong.'
 
-      if(!res.ok) {
-        const txt=await res.text()
-        console.error('Chat error',res.status,txt.slice(0,200))
-        setMessages(prev=>[...prev,{role:'assistant',content:'Error ('+res.status+'). Try again.'}])
-        return
+      // Strip blocks from display
+      const displayText = response
+        .replace(/\|\|LOG\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .replace(/\|\|TALLY\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .replace(/\|\|RECIPE\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .replace(/\|\|WATER\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .replace(/\|\|WEIGHT\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .replace(/\|\|GOALS\|\|[\s\S]+?\|\|END\|\|/g, '')
+        .trim()
+
+      setMessages(prev => [...prev, { role: 'assistant', content: displayText }])
+
+      // Save assistant message
+      if (user) {
+        supabase.from('chat_messages').insert({ user_id: user.id, role: 'assistant', content: displayText }).then(() => {})
       }
 
-      const json=await res.json()
-      if(json.reply) setMessages(prev=>[...prev,{role:'assistant',content:json.reply}])
-
-      // Log ALL items — logDataArray has all items, logData is just first for back-compat
-      const items: any[] = Array.isArray(json.logDataArray) && json.logDataArray.length > 0
-        ? json.logDataArray
-        : (json.logData ? [json.logData] : [])
-
-      if(items.length > 0) {
-        // Log each item sequentially
-        for(const item of items) {
-          await onLogFoodRef.current(item)
-        }
-        // Single refresh after all items are logged
-        onRefreshRef.current()
-      }
-
-      if(json.weightData?.weight){
-        const {data:{user}}=await supabase.auth.getUser()
-        if(user) await supabase.from('weight_log').insert({user_id:user.id,date:localDate(),weight:json.weightData.weight})
-      }
-
-    } catch(err) {
-      console.error('Send error:', err)
-      setMessages(prev=>[...prev,{role:'assistant',content:'Network error. Try again.'}])
-    } finally {
-      setLoading(false)
+      // Execute blocks
+      await parseAndExecuteBlocks(response)
+    } catch (e) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Try again.' }])
     }
-  },[input,messages,loading,todayEntries,recentEntries,goals,totals,currentPage,date])
+    setLoading(false)
+  }
 
-  const remCal=goals.calories-totals.calories
-  const calPct=Math.min(100,Math.round((totals.calories/goals.calories)*100))
-  const calColor=calPct>100?RED:calPct>85?ORANGE:GOLD
+  // Quick-log chips (top 5 recent, no AI round-trip)
+  const quickLogChips = frequents.slice(0, 5)
 
-  const quick=[
-    {l:'How am I doing?',m:'How am I doing today?'},
-    {l:'What should I eat?',m:'What should I eat next?'},
-    {l:'My kaged',m:'My kaged strawberry'},
-    {l:'My shake',m:'My chocolate protein shake'},
-    {l:'This week',m:'How is my week looking?'},
+  // Format date
+  const dateObj = new Date(viewingDate + 'T12:00:00')
+  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const d = dateObj.getDate()
+  const suf = [11,12,13].includes(d) ? 'th' : d%10===1 ? 'st' : d%10===2 ? 'nd' : d%10===3 ? 'rd' : 'th'
+  const dateStr = `${dayNames[dateObj.getDay()]}, ${monthNames[dateObj.getMonth()]} ${d}${suf}`
+  const isToday = viewingDate === new Date().toISOString().split('T')[0]
+
+  // Macro bar component
+  const MacroBar = ({ label, current, goal, color }: { label: string; current: number; goal: number; color: string }) => {
+    const pct = Math.min((current / goal) * 100, 100)
+    const over = current > goal
+    return (
+      <div style={{ flex: 1, textAlign: 'center' }}>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, fontWeight: 600, color: over ? '#f87171' : color, lineHeight: 1 }}>
+          {Math.round(current)}
+        </div>
+        <div style={{ height: 3, background: SURFACE2, borderRadius: 2, margin: '3px 0 2px', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: over ? '#f87171' : color, borderRadius: 2, transition: 'width 0.3s' }} />
+        </div>
+        <div style={{ fontSize: 9, color: MUTED, fontFamily: "'JetBrains Mono',monospace" }}>/{goal}</div>
+        <div style={{ fontSize: 8, color: MUTED, letterSpacing: '0.05em' }}>{label}</div>
+      </div>
+    )
+  }
+
+  if (!user) return <div style={{ minHeight: '100vh', background: DARK }} />
+
+  const tabs = [
+    { path: '/log', label: 'Log' },
+    { path: '/trends', label: 'Trends' },
+    { path: '/recipes', label: 'Recipes' },
+    { path: '/profile', label: 'Profile' },
   ]
 
   return (
-    <>
-      <button onClick={()=>setOpen(o=>!o)} style={{position:'fixed',bottom:76,right:14,zIndex:200,width:54,height:54,borderRadius:'50%',background:GOLD,border:'none',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 4px 24px rgba(212,160,23,0.4)',transform:open?'scale(0.9)':'scale(1)',transition:'transform 0.2s',cursor:'pointer'}}>
-        {open?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={DARK} strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={DARK} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>}
-      </button>
-
-      {open&&<div onClick={()=>setOpen(false)} style={{position:'fixed',inset:0,zIndex:198,background:'rgba(0,0,0,0.65)',backdropFilter:'blur(6px)',WebkitBackdropFilter:'blur(6px)'}}/>}
-
-      <div style={{position:'fixed',left:0,right:0,bottom:0,zIndex:199,height:open?'91vh':0,background:SURFACE,borderRadius:'22px 22px 0 0',display:'flex',flexDirection:'column',overflow:'hidden',transition:'height 0.38s cubic-bezier(0.32,0.72,0,1)',boxShadow:open?'0 -12px 60px rgba(0,0,0,0.7)':'none'}}>
-
-        <div style={{padding:'14px 16px 12px',borderBottom:'1px solid '+BORDER,flexShrink:0}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-            <div style={{display:'flex',alignItems:'center',gap:9}}>
-              <div style={{width:30,height:30,borderRadius:'50%',background:GOLD,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:900,color:DARK}}>C</div>
-              <div>
-                <div style={{fontSize:13,fontWeight:800,color:TEXT,lineHeight:1.1}}>Claude</div>
-                <div style={{fontSize:10,color:MUTED}}>{fmtDateTime(new Date())}</div>
-              </div>
-            </div>
-            <div style={{padding:'5px 13px',borderRadius:20,background:remCal>0?'rgba(212,160,23,0.1)':'rgba(239,68,68,0.12)',border:'1px solid '+(remCal>0?'rgba(212,160,23,0.3)':'rgba(239,68,68,0.35)')}}>
-              <span style={{fontSize:17,fontWeight:900,color:remCal>0?GOLD:RED}}>{Math.abs(remCal)}</span>
-              <span style={{fontSize:10,color:MUTED,marginLeft:3}}>cal {remCal>0?'left':'over'}</span>
-            </div>
-          </div>
-          <div style={{marginBottom:14}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-              <span style={{fontSize:10,color:MUTED,textTransform:'uppercase',letterSpacing:'0.07em',fontWeight:600}}>Calories</span>
-              <span style={{fontSize:10,color:MUTED}}>{totals.calories} / {goals.calories}</span>
-            </div>
-            <div style={{height:6,background:SURFACE2,borderRadius:3,overflow:'hidden'}}>
-              <div style={{height:'100%',borderRadius:3,width:calPct+'%',background:calColor,transition:'width 0.4s ease'}}/>
-            </div>
-          </div>
-          <div style={{display:'flex',justifyContent:'space-around',gap:4}}>
-            <MacroRing label="Protein" value={totals.protein} goal={goals.protein} color={GREEN} unit="g"/>
-            <MacroRing label="Carbs" value={totals.carbs} goal={goals.carbs} color={BLUE} unit="g"/>
-            <MacroRing label="Fat" value={totals.fat} goal={goals.fat} color={ORANGE} unit="g"/>
-            <MacroRing label="Fiber" value={totals.fiber} goal={goals.fiber} color={PURPLE} unit="g"/>
-          </div>
+    <div style={{ minHeight: '100vh', background: DARK, display: 'flex', flexDirection: 'column', maxWidth: 480, margin: '0 auto' }}>
+      {/* Macro pill row */}
+      <div style={{ padding: '12px 16px 6px', display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', gap: 6 }}>
+          <MacroBar label="CAL" current={totals.calories} goal={goals.calories} color={GOLD} />
+          <MacroBar label="P" current={totals.protein} goal={goals.protein} color="#22c55e" />
+          <MacroBar label="C" current={totals.carbs} goal={goals.carbs} color={BLUE} />
+          <MacroBar label="F" current={totals.fat} goal={goals.fat} color="#f59e0b" />
         </div>
-
-        <div style={{flex:1,overflowY:'auto',padding:'12px 12px 0',display:'flex',flexDirection:'column',gap:10,WebkitOverflowScrolling:'touch'}}>
-          {!historyLoaded&&<div style={{textAlign:'center',padding:'20px',color:MUTED,fontSize:13}}>Loading...</div>}
-          {messages.map((m,i)=>(
-            <div key={i} style={{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start',alignItems:'flex-end',gap:7}}>
-              {m.role==='assistant'&&<div style={{width:26,height:26,borderRadius:'50%',background:GOLD,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:900,color:DARK,marginBottom:1}}>C</div>}
-              <div style={{maxWidth:'82%',background:m.role==='user'?GOLD:SURFACE2,color:m.role==='user'?DARK:TEXT,borderRadius:m.role==='user'?'18px 18px 4px 18px':'18px 18px 18px 4px',padding:'10px 14px',wordBreak:'break-word'}}>
-                <MsgContent text={m.content} isUser={m.role==='user'}/>
-              </div>
-            </div>
-          ))}
-          {loading&&(
-            <div style={{display:'flex',alignItems:'flex-end',gap:7}}>
-              <div style={{width:26,height:26,borderRadius:'50%',background:GOLD,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:900,color:DARK}}>C</div>
-              <div style={{background:SURFACE2,borderRadius:'18px 18px 18px 4px',padding:'14px 16px',display:'flex',gap:5,alignItems:'center'}}>
-                {[0,1,2].map(j=><div key={j} style={{width:7,height:7,borderRadius:'50%',background:MUTED,animation:'ft-pulse 1.2s ease-in-out '+(j*0.22)+'s infinite'}}/>)}
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} style={{height:4}}/>
-        </div>
-
-        <div style={{padding:'8px 10px 4px',display:'flex',gap:6,overflowX:'auto',flexShrink:0,WebkitOverflowScrolling:'touch'}}>
-          {quick.map(qa=><button key={qa.m} onClick={()=>send(qa.m)} disabled={loading} style={{flexShrink:0,padding:'6px 13px',background:SURFACE2,border:'1px solid '+BORDER,borderRadius:20,color:TEXT,fontSize:12,whiteSpace:'nowrap',cursor:'pointer',opacity:loading?0.5:1}}>{qa.l}</button>)}
-        </div>
-
-        <div style={{padding:'8px 10px',paddingBottom:'calc(10px + env(safe-area-inset-bottom))',borderTop:'1px solid '+BORDER,display:'flex',gap:8,alignItems:'flex-end',flexShrink:0,background:SURFACE}}>
-          <textarea ref={inputRef} value={input} onChange={e=>{setInput(e.target.value);resize()}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="What did you eat? Ask anything..." rows={1}
-            style={{flex:1,background:SURFACE2,border:'1.5px solid '+(input?GOLD:BORDER),borderRadius:22,padding:'11px 16px',color:TEXT,fontSize:15,resize:'none',outline:'none',lineHeight:1.4,height:44,maxHeight:110,fontFamily:'inherit',transition:'border-color 0.2s'}}/>
-          <button onClick={()=>send()} disabled={!input.trim()||loading} style={{width:44,height:44,borderRadius:'50%',background:input.trim()&&!loading?GOLD:SURFACE2,border:'none',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',transition:'background 0.2s',cursor:input.trim()&&!loading?'pointer':'default'}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={input.trim()&&!loading?DARK:MUTED} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
+        {/* Water indicator */}
+        <div style={{ textAlign: 'center', minWidth: 36 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 600, color: '#38bdf8' }}>
+            {waterOz}
+          </div>
+          <div style={{ fontSize: 8, color: MUTED }}>oz H2O</div>
         </div>
       </div>
 
-      <style>{`
-        @keyframes ft-pulse{0%,60%,100%{opacity:0.25;transform:scale(0.75)}30%{opacity:1;transform:scale(1)}}
-        *{-webkit-tap-highlight-color:transparent}
-        ::-webkit-scrollbar{display:none}
-      `}</style>
-    </>
-  )
-}
+      {/* Date label */}
+      <div style={{ padding: '0 16px 8px', fontSize: 11, color: MUTED, fontFamily: "'JetBrains Mono',monospace" }}>
+        {isToday ? 'Today' : dateStr}
+      </div>
 
-export default function AppLayout({children}:{children:React.ReactNode}) {
-  const router=useRouter()
-  const pathname=usePathname()
-  const supabase=createClient()
-
-  const [user,setUser]=useState<any>(null)
-  const [goals]=useState<MacroGoals>(DEFAULT_GOALS)
-  const [todayEntries,setTodayEntries]=useState<FoodEntry[]>([])
-  const [recentEntries,setRecentEntries]=useState<FoodEntry[]>([])
-  const [totals,setTotals]=useState<MacroTotals>({calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0})
-  const [refreshKey,setRefreshKey]=useState(0)
-  const [viewingDate,setViewingDate]=useState(localDate())
-
-  const viewingDateRef=useRef(viewingDate)
-  useEffect(()=>{ viewingDateRef.current=viewingDate },[viewingDate])
-
-  const activeTab=pathname.split('/')[1]||'log'
-
-  useEffect(()=>{ if(pathname!=='/log') setViewingDate(localDate()) },[pathname])
-
-  useEffect(()=>{
-    supabase.auth.getUser().then(({data:{user}})=>{
-      if(!user) router.push('/auth')
-      else setUser(user)
-    })
-  },[])
-
-  const loadEntries=useCallback(async()=>{
-    if(!user) return
-    const today=localDate()
-    const {data:td}=await supabase.from('food_entries').select('*').eq('user_id',user.id).eq('date',today).order('created_at',{ascending:true})
-    const entries=(td||[]) as FoodEntry[]
-    setTodayEntries(entries)
-    setTotals(entries.reduce((a,e)=>({
-      calories:a.calories+(e.calories||0),protein:a.protein+(e.protein||0),
-      carbs:a.carbs+(e.carbs||0),fat:a.fat+(e.fat||0),
-      fiber:a.fiber+(e.fiber||0),sodium:a.sodium+(e.sodium||0),
-    }),{calories:0,protein:0,carbs:0,fat:0,fiber:0,sodium:0}))
-    const d7=new Date();d7.setDate(d7.getDate()-7)
-    const d7s=d7.getFullYear()+'-'+String(d7.getMonth()+1).padStart(2,'0')+'-'+String(d7.getDate()).padStart(2,'0')
-    const {data:rd}=await supabase.from('food_entries').select('name,calories,protein,carbs,fat,date').eq('user_id',user.id).gte('date',d7s).order('created_at',{ascending:false}).limit(150)
-    setRecentEntries((rd||[]) as FoodEntry[])
-  },[user])
-
-  useEffect(()=>{loadEntries()},[user,refreshKey])
-
-  useEffect(()=>{
-    const h=()=>setRefreshKey(k=>k+1)
-    window.addEventListener('fueltrack:refresh',h)
-    return ()=>window.removeEventListener('fueltrack:refresh',h)
-  },[])
-
-  useEffect(()=>{
-    const h=(e:any)=>{ if(e.detail?.date) setViewingDate(e.detail.date) }
-    window.addEventListener('fueltrack:viewdate',h)
-    return ()=>window.removeEventListener('fueltrack:viewdate',h)
-  },[])
-
-  // Pure insert — no tally, always fresh entry
-  const handleLogFood=useCallback(async(data:any)=>{
-    if(!user) return null
-    const logDate=data.date||viewingDateRef.current||localDate()
-    const res=await fetch('/api/log-food',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...data,date:logDate})
-    })
-    const json=await res.json()
-    if(!json.success) console.error('log-food failed:', json.error)
-    return json.entry?.id||null
-  },[user])
-
-  const onLogFoodRef=useRef(handleLogFood)
-  useEffect(()=>{ onLogFoodRef.current=handleLogFood },[handleLogFood])
-
-  // Refresh: update layout state AND fire window event for log page
-  const handleRefresh=useCallback(()=>{
-    setRefreshKey(k=>k+1)
-    window.dispatchEvent(new CustomEvent('fueltrack:refresh'))
-  },[])
-
-  if(!user) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:DARK,color:MUTED,fontSize:14}}>Loading...</div>
-  )
-
-  return (
-    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:DARK,overflow:'hidden'}}>
-      <main style={{flex:1,overflowY:'auto',overflowX:'hidden',paddingBottom:60,WebkitOverflowScrolling:'touch'}}>
+      {/* Page content */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 80 }}>
         {children}
-      </main>
-      <NavBar active={activeTab}/>
-      <ClaudeChat
-        todayEntries={todayEntries}
-        recentEntries={recentEntries}
-        totals={totals}
-        goals={goals}
-        date={viewingDate}
-        currentPage={pathname}
-        onLogFoodRef={onLogFoodRef}
-        onRefresh={handleRefresh}
-      />
+      </div>
+
+      {/* Bottom nav with Ask AI in center */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 480, background: SURFACE,
+        borderTop: `1px solid ${BORDER}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+        padding: '6px 0 env(safe-area-inset-bottom, 8px)',
+        zIndex: 100,
+      }}>
+        {tabs.slice(0, 2).map(t => (
+          <a key={t.path} href={t.path} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            textDecoration: 'none', padding: '4px 12px',
+            color: pathname === t.path ? GOLD : MUTED,
+            fontSize: 10, fontWeight: pathname === t.path ? 600 : 400,
+            letterSpacing: '0.05em',
+          }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px solid ${pathname === t.path ? GOLD : MUTED}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: pathname === t.path ? GOLD : 'transparent' }} />
+            </div>
+            {t.label}
+          </a>
+        ))}
+
+        {/* Ask AI pill - center */}
+        <button
+          onClick={() => { setChatOpen(true); setTimeout(() => inputRef.current?.focus(), 100) }}
+          style={{
+            background: GOLD, border: 'none', borderRadius: 20,
+            padding: '10px 20px', color: DARK, fontSize: 13, fontWeight: 700,
+            cursor: 'pointer', letterSpacing: '0.02em',
+            boxShadow: '0 2px 12px rgba(212,160,23,0.3)',
+            transform: 'translateY(-8px)',
+          }}
+        >
+          Ask AI
+        </button>
+
+        {tabs.slice(2).map(t => (
+          <a key={t.path} href={t.path} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            textDecoration: 'none', padding: '4px 12px',
+            color: pathname === t.path ? GOLD : MUTED,
+            fontSize: 10, fontWeight: pathname === t.path ? 600 : 400,
+            letterSpacing: '0.05em',
+          }}>
+            <div style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px solid ${pathname === t.path ? GOLD : MUTED}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: pathname === t.path ? GOLD : 'transparent' }} />
+            </div>
+            {t.label}
+          </a>
+        ))}
+      </div>
+
+      {/* Chat modal */}
+      {chatOpen && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 200,
+          background: 'rgba(0,0,0,0.6)',
+          display: 'flex', flexDirection: 'column',
+          animation: 'fadeIn 0.15s ease',
+        }} onClick={(e) => { if (e.target === e.currentTarget) setChatOpen(false) }}>
+          <div style={{
+            marginTop: 'auto', background: DARK,
+            borderRadius: '16px 16px 0 0', border: `1px solid ${BORDER}`, borderBottom: 'none',
+            width: '100%', maxWidth: 480, margin: '60px auto 0',
+            flex: 1, display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
+            animation: 'slideUp 0.2s ease',
+          }}>
+            {/* Chat header with macro summary */}
+            <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>
+                  <span style={{ color: GOLD }}>FuelTrack</span> AI
+                </div>
+                <button onClick={() => setChatOpen(false)} style={{
+                  background: 'none', border: 'none', color: MUTED, fontSize: 20, cursor: 'pointer', padding: '0 4px',
+                }}>x</button>
+              </div>
+              {/* Compact macro bars in chat header */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { label: 'Cal', cur: totals.calories, goal: goals.calories, color: GOLD },
+                  { label: 'P', cur: totals.protein, goal: goals.protein, color: '#22c55e' },
+                  { label: 'C', cur: totals.carbs, goal: goals.carbs, color: BLUE },
+                  { label: 'F', cur: totals.fat, goal: goals.fat, color: '#f59e0b' },
+                ].map(m => {
+                  const pct = Math.min((m.cur / m.goal) * 100, 100)
+                  const left = m.goal - m.cur
+                  return (
+                    <div key={m.label} style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: MUTED, marginBottom: 2 }}>
+                        <span>{m.label}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{left > 0 ? `${Math.round(left)} left` : `+${Math.abs(Math.round(left))} over`}</span>
+                      </div>
+                      <div style={{ height: 3, background: SURFACE2, borderRadius: 2, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: left < 0 ? '#f87171' : m.color, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 12px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {messages.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 16px', color: MUTED }}>
+                  <div style={{ fontSize: 14, marginBottom: 4 }}>What did you have?</div>
+                  <div style={{ fontSize: 12 }}>I know your favorites and what you log. Ask me anything about food, macros, or recipes.</div>
+                </div>
+              )}
+
+              {messages.map((m, i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+                  alignItems: 'flex-end', gap: 6,
+                }}>
+                  {m.role === 'assistant' && (
+                    <div style={{
+                      width: 22, height: 22, borderRadius: '50%', background: GOLD,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, fontSize: 10, color: DARK, fontWeight: 700,
+                    }}>C</div>
+                  )}
+                  <div style={{
+                    maxWidth: '80%',
+                    background: m.role === 'user' ? GOLD : SURFACE2,
+                    color: m.role === 'user' ? DARK : TEXT,
+                    borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                    padding: '10px 14px', fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word',
+                  }}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: '50%', background: GOLD,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, color: DARK, fontWeight: 700,
+                  }}>C</div>
+                  <div style={{ background: SURFACE2, borderRadius: '16px 16px 16px 4px', padding: '12px 16px', display: 'flex', gap: 4 }}>
+                    {[0,1,2].map(j => (
+                      <div key={j} style={{
+                        width: 6, height: 6, borderRadius: '50%', background: MUTED,
+                        animation: `pulse 1.2s ease-in-out ${j * 0.2}s infinite`,
+                      }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Quick-log chips */}
+            {quickLogChips.length > 0 && messages.length < 3 && (
+              <div style={{
+                padding: '6px 12px', display: 'flex', gap: 6, overflowX: 'auto',
+                flexShrink: 0, WebkitOverflowScrolling: 'touch',
+              }}>
+                {quickLogChips.map((name, i) => (
+                  <button key={i} onClick={() => sendMessage(name)} style={{
+                    background: SURFACE2, border: `1px solid ${BORDER}`, borderRadius: 16,
+                    padding: '6px 12px', color: TEXT, fontSize: 12, cursor: 'pointer',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>{name}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Suggestion chips */}
+            {messages.length === 0 && (
+              <div style={{
+                padding: '4px 12px 0', display: 'flex', gap: 6, overflowX: 'auto',
+                flexShrink: 0, WebkitOverflowScrolling: 'touch',
+              }}>
+                {['How am I doing?', 'What should I eat?', 'Log water', 'Weekly summary'].map((chip, i) => (
+                  <button key={i} onClick={() => sendMessage(chip)} style={{
+                    background: 'transparent', border: `1px solid ${BORDER}`, borderRadius: 16,
+                    padding: '6px 12px', color: GOLD, fontSize: 11, cursor: 'pointer',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>{chip}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Input */}
+            <div style={{ padding: '8px 12px 12px', display: 'flex', gap: 8, flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom, 12px)' }}>
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                placeholder="Tell me what you ate..."
+                style={{
+                  flex: 1, background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 20,
+                  padding: '10px 16px', color: TEXT, fontSize: 14, outline: 'none',
+                }}
+              />
+              <button
+                onClick={() => sendMessage()}
+                disabled={!input.trim() || loading}
+                style={{
+                  background: input.trim() ? GOLD : SURFACE2,
+                  border: 'none', borderRadius: '50%',
+                  width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: input.trim() ? 'pointer' : 'default',
+                  color: input.trim() ? DARK : MUTED, fontSize: 16, fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                {loading ? '...' : '>'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

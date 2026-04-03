@@ -10,8 +10,17 @@ export interface FoodEntry {
   fat: number
   fiber: number
   sodium: number
-  category: 'food' | 'drink'
+  category: 'meal' | 'drink' | 'snack'
   created_at: string
+}
+
+export interface DailyGoals {
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
+  fiber: number
+  sodium: number
 }
 
 export interface MacroTotals {
@@ -23,53 +32,33 @@ export interface MacroTotals {
   sodium: number
 }
 
-export interface MacroGoals {
-  calories: number
-  protein: number
-  carbs: number
-  fat: number
-  fiber: number
-  sodium: number
-}
-
-export const DEFAULT_GOALS: MacroGoals = {
-  calories: 1650,
-  protein: 200,
-  carbs: 140,
-  fat: 40,
-  fiber: 32,
-  sodium: 2000,
-}
-
 export interface Recipe {
   id: string
   user_id: string
   name: string
   servings: number
-  macros_per_serving: MacroTotals
-  ingredients: { name: string; amount: string }[]
-  steps: string[]
-  cooking_method?: string
-  cuisine?: string
-  tags?: string[]
-  created_at?: string
+  calories_per_serving: number
+  protein_per_serving: number
+  carbs_per_serving: number
+  fat_per_serving: number
+  fiber_per_serving: number
+  sodium_per_serving: number
+  ingredients: string
+  instructions: string
+  cooking_method: string
+  cuisine: string
+  protein_type: string
+  carb_type: string
+  tags: string
+  created_at: string
 }
 
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-export interface ParsedMacros {
-  name: string
-  serving: string
-  calories: number
-  protein: number
-  carbs: number
-  fat: number
-  fiber: number
-  sodium: number
-  category: 'food' | 'drink'
+export interface WaterEntry {
+  id: string
+  user_id: string
+  date: string
+  amount_oz: number
+  created_at: string
 }
 
 export interface WeightEntry {
@@ -77,5 +66,24 @@ export interface WeightEntry {
   user_id: string
   date: string
   weight: number
+  notes: string
+  created_at: string
+}
+
+export interface ProfileChange {
+  id: string
+  user_id: string
+  field: string
+  old_value: string
+  new_value: string
+  reason: string
+  created_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  user_id: string
+  role: 'user' | 'assistant'
+  content: string
   created_at: string
 }

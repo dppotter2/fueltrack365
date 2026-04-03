@@ -1,223 +1,243 @@
-'use server'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
+import { findKnownProduct } from '@/lib/known-products'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-const SYSTEM_PROMPT = `You are Claude, the AI brain inside FuelTrack 365 for Patrick Potter.
+function getSupabase(req: NextRequest) {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { cookie: req.headers.get('cookie') || '' } } }
+  )
+}
 
-## PATRICK
-34M, Hartford CT. 284 lbs to 230 lbs goal. Tirzepatide 2.5mg/wk. LBM ~155 lbs.
+const SYSTEM_PROMPT = `You are Claude, the AI inside FuelTrack 365 — Patrick Potter's personal macro tracking app.
 
-## MACRO TARGETS
-Calories: 1,650/day | Protein: 200g | Carbs: 140g | Fat: 40g | Fiber: 32g | Sodium: <2,000mg
+## PATRICK'S PROFILE
+34M, 6'0", current goal: 230 lbs. On Hartford HealthCare Medical & Surgical Weight Loss program.
+Lean body mass ~155 lbs. Cooking for himself + one other person.
 
-## KNOWN PRODUCTS — USE EXACT MACROS, NEVER SEARCH
-Core Power Elite 14oz: 230cal 42P 9C 8F (my shake, protein shake, chocolate shake, vanilla shake)
-Kaged Hydration 1 scoop: 5cal 0P 1C 0F (my kaged, kaged strawberry, strawberry kaged)
-Horchata packet: 10cal 0P 3C 0F
-Horchata shake (Core Power + horchata): 240cal 42P 12C 8F
-Quest Bar: 190cal 21P 21C 7F fiber:14
-Quest Crispy Choc Brownie: 190cal 15P 26C 6F
-Quest Overload Choc Explosion: 230cal 20P 27C 9F
-Barebells Cookie Dough: 200cal 20P 18C 7F
-Halo Mandarin/clementine: 35cal 1P 9C 0F
+## DAILY MACRO TARGETS (recalculate every 15-20 lbs)
+- Calories: 1,650/day (never below 1,400)
+- Protein: 185-215g (protein FIRST at every meal)
+- Carbs: 130-150g
+- Fat: 35-45g
+- Fiber: 30-35g | Sodium: <2,000mg
+- Water: 96-112 oz/day (min 64 oz)
+- Added sugar: <25g/day
 
-## FOOD PREFERENCES
-OK: beef/chicken/lamb/pork/turkey/veal/seafood/eggs/dairy, all veggies except snap+snow peas, fruits, pasta/farro/couscous/oats/orzo/quinoa, Kerrygold butter ONLY
-NEVER: white rice, snap/snow peas, organ meats, cottage cheese
+## MEAL STRUCTURE
+- Meal 1: 450-475 cal | 50-55g P | 38-42g C | 12-14g F
+- Snack 1: 150-175 cal | 15-20g P
+- Meal 2: 575-625 cal | 65-75g P | 45-55g C | 12-16g F
+- Snack 2: 150-175 cal | 15-20g P
 
-## LOGGING — CRITICAL RULES
+## COOKING PROFILE
+Equipment: Weber Searwood pellet smoker/grill, Dutch oven, cast iron, sheet pan, Instant Pot.
+Season: May-Oct = smoker/grill. Winter = stovetop/oven/Dutch oven braises.
+Style: Medium heat, balanced richness, bright acid finish. Meat rare to medium-rare. Medium smoke.
+Loves: mushrooms, roasted root veg, fresh tomatoes, alliums. Dislikes: snow/snap peas, organ meats.
+Butter: Kerrygold only. PB: Teddie All Natural Smooth. Ricotta: BelGioioso or Organic Valley.
+Cuisines: Italian-American, New England, Mexican, Southern, Tex-Mex (confident). Exploring: French, Spanish, Greek, Japanese, Thai, Brazilian, Cuban, Cajun/Creole, Caribbean, Lebanese.
 
-**ALWAYS emit a ||LOG|| block for EVERY distinct food item. No exceptions.**
+## RESPONSE RULES
+- NO EMOJIS EVER. They look cheap.
+- Be concise. 1-3 sentences for food logging. Longer for recipes/analysis.
+- Never narrate your search process. Just give the answer.
+- All recipes must be for 6 servings.
+- Use military time format (e.g., 14:30).
+- Date format: "Thursday, April 2nd"
+- Macro values must be integers.
 
-**For complex dishes** like "omelet with ham and cheese" or "chicken with rice and broccoli":
-- Log as ONE combined entry with the full dish name and combined macros
-- Do NOT break into separate components unless they're clearly separate meals
+## STRUCTURED DATA BLOCKS
+When logging food, ALWAYS include at end of response:
+||LOG||{"name":"Food Name","serving":"portion","calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N,"category":"meal|drink|snack"}||END||
 
-**For multiple separate items** like "2 eggs and a Quest bar" or "shake and kaged":
-- Log EACH item as its own ||LOG|| block
+When user says "more" or "another" of something already logged today, use TALLY to update existing entry:
+||TALLY||{"name":"Exact Name From Log","add_calories":N,"add_protein":N,"add_carbs":N,"add_fat":N,"add_fiber":N,"add_sodium":N}||END||
 
-**Common food macros** (use these exactly):
-- 1 large egg: 70cal 6P 0C 5F
-- 2 large eggs: 140cal 12P 0C 10F
-- 3 large eggs: 210cal 18P 0C 15F
-- 1 oz ham: 45cal 5P 1C 2F
-- 2 oz ham: 90cal 10P 2C 4F
-- 1 oz cheddar cheese: 115cal 7P 0C 9F
-- 1 oz shredded cheddar: 115cal 7P 0C 9F
-- 2 eggs + 1oz ham + 1oz cheese omelet: 345cal 25P 1C 24F
-- 2 eggs + 2oz ham + 1oz cheese omelet: 390cal 30P 3C 26F
-- 6oz sirloin/flank steak: 300cal 45P 0C 12F
-- 7oz sirloin/flank steak: 350cal 52P 0C 14F
-- 4oz chicken breast: 185cal 35P 0C 4F
-- 6oz chicken breast: 280cal 52P 0C 6F
-- 1 slice bacon: 45cal 3P 0C 4F
-- 3 slices bacon: 135cal 9P 0C 12F
-- 1 tbsp Kerrygold butter: 102cal 0P 0C 12F
-- 1 tbsp olive oil: 120cal 0P 0C 14F
-- 1 cup broccoli: 55cal 4P 11C 1F
-- 1 medium sweet potato: 115cal 2P 27C 0F
-- 1/2 cup oats dry: 150cal 5P 27C 3F fiber:4
-- 1 cup Greek yogurt: 170cal 17P 6C 9F
+When saving a recipe:
+||RECIPE||{"name":"Recipe Name","servings":6,"calories_per_serving":N,"protein_per_serving":N,"carbs_per_serving":N,"fat_per_serving":N,"fiber_per_serving":N,"sodium_per_serving":N,"ingredients":"ingredient list","instructions":"step by step","cooking_method":"grill|smoke|oven|stovetop|no-cook","cuisine":"Italian|Mexican|etc","protein_type":"chicken|beef|etc","carb_type":"rice|pasta|etc"}||END||
 
-**LOG format:**
-||LOG||{"name":"Food Name","serving":"amount description","calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N,"category":"food or drink"}||END||
+When logging water:
+||WATER||{"amount_oz":N}||END||
 
-- Whole numbers only
-- category = "food" or "drink" exactly
-- For dishes: describe clearly e.g. "Ham and cheese omelet (2 eggs, 2oz ham, 1oz cheddar)"
+When logging weight:
+||WEIGHT||{"weight":N,"notes":"optional context"}||END||
 
-## OTHER FORMATS
-RECIPE: ||RECIPE||{"name":"...","servings":6,"macros_per_serving":{"calories":N,"protein":N,"carbs":N,"fat":N,"fiber":N,"sodium":N},"ingredients":[{"name":"...","amount":"..."}],"steps":["..."],"cuisine":"...","cooking_method":"...","tags":["..."]}||END||
-WEIGHT: ||WEIGHT||{"weight":N}||END||
-
-## RESPONSE STYLE
-Short and direct: "Logged — ham & cheese omelet. 390 cal, 30g P. 1,260 left."
-For multiple items: list each one. Always note remaining macros.
-Never preachy. Never repeat targets.`
+When updating macro goals:
+||GOALS||{"field":"calories|protein|carbs|fat|fiber|sodium","old_value":N,"new_value":N,"reason":"why changed"}||END||
+`
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const {
-      message, sessionHistory = [], todayEntries = [], recentEntries = [],
-      goals = { calories: 1650, protein: 200, carbs: 140, fat: 40, fiber: 32, sodium: 2000 },
-      totals = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0 },
-      currentPage = '/log', date = new Date().toISOString().split('T')[0],
-    } = body
+    const { message, date, page, todayEntries, totals, goals, frequents, recentEntries, library, recipes, pastMessages, waterOz } = body
 
-    const remaining = {
-      calories: goals.calories - totals.calories,
-      protein: goals.protein - totals.protein,
-      carbs: goals.carbs - totals.carbs,
-      fat: goals.fat - totals.fat,
+    // Intent detection for fast path
+    const lowerMsg = message.toLowerCase().trim()
+    const knownProduct = findKnownProduct(lowerMsg)
+
+    // Build frequency map from recent entries
+    const freqMap: Record<string, number> = {}
+    if (recentEntries && Array.isArray(recentEntries)) {
+      recentEntries.forEach((e: any) => {
+        freqMap[e.name] = (freqMap[e.name] || 0) + 1
+      })
     }
+    const freqStr = Object.entries(freqMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([name, count]) => `${name}: ${count}x`)
+      .join(', ')
 
-    const freq: Record<string, number> = {}
-    for (const e of recentEntries) { const k = e.name.toLowerCase(); freq[k] = (freq[k]||0)+1 }
-    const frequents = Object.entries(freq).filter(([,c]) => c >= 2).sort((a,b) => b[1]-a[1])
-      .slice(0,10).map(([n,c]) => n + ' (' + c + 'x)')
-
-    const todayStr = new Date().toISOString().split('T')[0]
-    const viewObj = new Date(date + 'T12:00:00')
+    // Build date context
+    const viewDate = new Date(date + 'T12:00:00')
     const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
-    const fullDate = dayNames[viewObj.getDay()] + ', ' + monthNames[viewObj.getMonth()] + ' ' + viewObj.getDate()
-    const yDate = new Date(); yDate.setDate(yDate.getDate()-1)
+    const vDay = viewDate.getDate()
+    const vSuf = [11,12,13].includes(vDay) ? 'th' : vDay%10===1 ? 'st' : vDay%10===2 ? 'nd' : vDay%10===3 ? 'rd' : 'th'
+    const fullDateStr = `${dayNames[viewDate.getDay()]}, ${monthNames[viewDate.getMonth()]} ${vDay}${vSuf}`
+    const todayStr = new Date().toISOString().split('T')[0]
     const isToday = date === todayStr
-    const isYest = date === yDate.toISOString().split('T')[0]
-    const dateLabel = isToday ? 'TODAY (' + fullDate + ')' : isYest ? 'YESTERDAY (' + fullDate + ')' : fullDate
+    const dateLabel = isToday ? `TODAY (${fullDateStr} ${date})` : `${fullDateStr} ${date}`
     const now = new Date()
-    const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0')
+    const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
 
-    const ctx = `VIEWING: ${dateLabel} | ${date} | ${timeStr}
-Logged (${todayEntries.length}): ${todayEntries.length===0 ? 'none' : (todayEntries as any[]).map(e=>e.name+' '+e.calories+'cal').join(', ')}
-Remaining: ${remaining.calories}cal | ${remaining.protein}gP | ${remaining.carbs}gC | ${remaining.fat}gF
-Totals: ${totals.calories}/${goals.calories}cal | ${totals.protein}/${goals.protein}gP | fiber:${totals.fiber}g
-Frequent: ${frequents.length > 0 ? frequents.join(', ') : 'none'}`
+    const remaining = {
+      calories: Math.round((goals?.calories || 1650) - (totals?.calories || 0)),
+      protein: Math.round((goals?.protein || 200) - (totals?.protein || 0)),
+      carbs: Math.round((goals?.carbs || 140) - (totals?.carbs || 0)),
+      fat: Math.round((goals?.fat || 40) - (totals?.fat || 0)),
+    }
 
-    const historyMsgs = sessionHistory.slice(-20).map((m: any) => ({
-      role: m.role as 'user'|'assistant',
-      content: m.content,
-    }))
+    const todayBlock = todayEntries && todayEntries.length > 0
+      ? todayEntries.map((e: any) => `  ${e.name} -- ${e.serving} -- ${e.calories}cal ${e.protein}gP ${e.carbs}gC ${e.fat}gF`).join('\n')
+      : 'Nothing logged yet.'
 
+    const libBlock = library && library.length > 0
+      ? library.slice(0, 30).map((i: any) => `  ${i.name} -- ${i.serving_size} -- ${i.calories}cal ${i.protein}P ${i.carbs}C ${i.fat}F`).join('\n')
+      : ''
+
+    const recBlock = recipes && recipes.length > 0
+      ? recipes.map((r: any) => `  ${r.name} -- ${r.servings || 6} servings -- ${r.cooking_method || 'various'} -- ${r.cuisine || 'various'}`).join('\n')
+      : ''
+
+    const pageContext = page === '/trends' ? 'User is on TRENDS page. May ask for reports, analysis, data exports.'
+      : page === '/recipes' ? 'User is on RECIPES page. May ask to find, filter, build, or scale recipes.'
+      : page === '/profile' ? 'User is on PROFILE page. May ask to view/edit macro goals, log weight, review changes.'
+      : 'User is on LOG page. Primary use: logging food, checking progress, meal suggestions.'
+
+    const contextBlock = `## ACTIVE DATE: ${dateLabel}
+Current time: ${timeStr} | Page: ${page}
+IMPORTANT: Log ALL food to date ${date}. Do NOT default to today unless ${date} IS today.
+
+GOALS: ${goals?.calories || 1650}cal | ${goals?.protein || 200}gP | ${goals?.carbs || 140}gC | ${goals?.fat || 40}gF
+REMAINING: ${remaining.calories}cal | ${remaining.protein}gP | ${remaining.carbs}gC | ${remaining.fat}gF
+Water today: ${waterOz || 0} oz / 96-112 oz goal
+
+LOGGED ON ${date} (${todayEntries?.length || 0} entries):
+${todayBlock}
+
+${freqStr ? `FREQUENCY (last 7 days): ${freqStr}` : ''}
+${libBlock ? `FOOD LIBRARY:\n${libBlock}` : ''}
+${recBlock ? `SAVED RECIPES:\n${recBlock}` : ''}
+
+${pageContext}`
+
+    // Known product fast path - no AI call needed
+    if (knownProduct) {
+      const multiplierMatch = lowerMsg.match(/(\d+)\s*(?:scoop|bottle|bar|packet|serving|mandarin|clementine)/i)
+      const multiplier = multiplierMatch ? parseInt(multiplierMatch[1]) : 1
+      const cal = Math.round(knownProduct.calories * multiplier)
+      const pro = Math.round(knownProduct.protein * multiplier)
+      const carb = Math.round(knownProduct.carbs * multiplier)
+      const fat = Math.round(knownProduct.fat * multiplier)
+      const fib = Math.round(knownProduct.fiber * multiplier)
+      const sod = Math.round(knownProduct.sodium * multiplier)
+      const servingDesc = multiplier > 1 ? `${multiplier} ${knownProduct.serving.replace('1 ', '')}s` : knownProduct.serving
+
+      // Check if this is a tally addition
+      const isTally = lowerMsg.includes('more') || lowerMsg.includes('another') || lowerMsg.includes('again')
+      const existingEntry = isTally && todayEntries
+        ? todayEntries.find((e: any) => knownProduct.names.some((n: string) => e.name.toLowerCase().includes(n)))
+        : null
+
+      if (existingEntry) {
+        const displayName = knownProduct.names[0].split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+        const text = `Added ${multiplier} more to your ${existingEntry.name}. Updated total: ${existingEntry.calories + cal}cal, ${existingEntry.protein + pro}gP.
+
+||TALLY||{"name":"${existingEntry.name}","add_calories":${cal},"add_protein":${pro},"add_carbs":${carb},"add_fat":${fat},"add_fiber":${fib},"add_sodium":${sod}}||END||`
+        return NextResponse.json({ response: text })
+      }
+
+      const displayName = knownProduct.names[0].split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+      const text = `Logged ${servingDesc} ${displayName} -- ${cal}cal, ${pro}gP, ${carb}gC, ${fat}gF.${remaining.calories - cal < 300 ? ` Heads up: only ${remaining.calories - cal}cal remaining after this.` : ''}
+
+||LOG||{"name":"${displayName}","serving":"${servingDesc}","calories":${cal},"protein":${pro},"carbs":${carb},"fat":${fat},"fiber":${fib},"sodium":${sod},"category":"${knownProduct.category}"}||END||`
+      return NextResponse.json({ response: text })
+    }
+
+    // Full AI path
     const messages: any[] = [
-      ...historyMsgs,
-      { role: 'user' as const, content: '[CTX]\n' + ctx + '\n[/CTX]\n\n' + message }
+      ...(pastMessages || []).slice(-28),
+      { role: 'user', content: message }
     ]
 
-    // Single API call — web search limited to prevent freezing on common foods
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 1200,
-      system: SYSTEM_PROMPT,
+    let response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      tools: [{ type: 'web_search_20250305' as any, name: 'web_search' } as any],
+      system: SYSTEM_PROMPT + '\n\n' + contextBlock,
       messages,
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 } as any],
     })
 
-    let rawText = ''
+    // Agentic loop for tool_use
+    let attempts = 0
+    while (response.stop_reason === 'tool_use' && attempts < 5) {
+      attempts++
+      const toolBlocks = response.content.filter((b: any) => b.type === 'tool_use')
+      const resultBlocks = toolBlocks.map((b: any) => ({
+        type: 'tool_result' as const,
+        tool_use_id: b.id,
+        content: 'Search completed. Provide your answer now.'
+      }))
 
-    if (response.stop_reason === 'tool_use') {
-      const msgs2: any[] = [...messages, { role: 'assistant', content: response.content }]
-      const toolResults: any[] = response.content
-        .filter((b: any) => b.type === 'tool_use')
-        .map((b: any) => ({ type: 'tool_result', tool_use_id: b.id, content: 'Search completed.' }))
-      if (toolResults.length > 0) {
-        msgs2.push({ role: 'user', content: toolResults })
-        const r2 = await anthropic.messages.create({
-          model: 'claude-haiku-4-5', max_tokens: 1200, system: SYSTEM_PROMPT, messages: msgs2,
-          tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 } as any],
-        })
-        for (const b of r2.content) { if (b.type === 'text') rawText += b.text }
-      }
-    } else {
-      for (const b of response.content) { if (b.type === 'text') rawText += b.text }
+      messages.push({ role: 'assistant', content: response.content })
+      messages.push({ role: 'user', content: resultBlocks })
+
+      response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        tools: [{ type: 'web_search_20250305' as any, name: 'web_search' } as any],
+        system: SYSTEM_PROMPT + '\n\n' + contextBlock,
+        messages,
+      })
     }
 
-    if (!rawText) {
-      for (const b of response.content) { if (b.type === 'text') rawText += b.text }
-    }
+    // Extract text from response
+    let rawText = response.content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('\n')
 
-    // Parse ALL LOG blocks
-    const logDataArray: any[] = []
-    const logRegex = /\|\|LOG\|\|([\s\S]+?)\|\|END\|\|/g
-    let logMatch
-    while ((logMatch = logRegex.exec(rawText)) !== null) {
-      try {
-        const item = JSON.parse(logMatch[1].trim())
-        item.date = date
-        logDataArray.push(item)
-      } catch(e) {
-        console.error('LOG parse error:', logMatch[1].slice(0,100))
-      }
-    }
-
-    let recipeData = null
-    const recipeMatch = rawText.match(/\|\|RECIPE\|\|([\s\S]+?)\|\|END\|\|/)
-    if (recipeMatch) { try { recipeData = JSON.parse(recipeMatch[1].trim()) } catch {} }
-
-    let weightData = null
-    const weightMatch = rawText.match(/\|\|WEIGHT\|\|([\s\S]+?)\|\|END\|\|/)
-    if (weightMatch) { try { weightData = JSON.parse(weightMatch[1].trim()) } catch {} }
-
-    const displayText = rawText
-      .replace(/\|\|LOG\|\|[\s\S]+?\|\|END\|\|/g, '')
-      .replace(/\|\|RECIPE\|\|[\s\S]+?\|\|END\|\|/g, '')
-      .replace(/\|\|WEIGHT\|\|[\s\S]+?\|\|END\|\|/g, '')
-      .replace(/I'll search[^.]*\.?|Let me search[^.]*\.?/gi, '')
+    // Clean search narration
+    rawText = rawText
+      .replace(/Let me (search|look|find|check)[\s\S]*?(?=\n\n|\.|$)/gi, '')
+      .replace(/I found (solid |good |some )?data[\s\S]*?(?=\n\n|\.|$)/gi, '')
+      .replace(/Based on (multiple |my |the )?search[\s\S]*?(?=\n\n|\.|$)/gi, '')
+      .replace(/^(Perfect!|Great!|Sure!|Absolutely!)\s*/gm, '')
       .trim()
 
-    if (!displayText && logDataArray.length === 0 && !recipeData) {
-      return NextResponse.json({ reply: 'Something went wrong. Try again.', logData: null, logDataArray: [], recipeData: null, weightData: null })
-    }
+    return NextResponse.json({ response: rawText })
 
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user && displayText) {
-        await supabase.from('chat_messages').insert([
-          { user_id: user.id, role: 'user', content: message },
-          { user_id: user.id, role: 'assistant', content: displayText },
-        ])
-      }
-    } catch(e) { console.error('chat persist error:', e) }
-
-    return NextResponse.json({
-      reply: displayText || null,
-      logData: logDataArray[0] || null,
-      logDataArray,
-      recipeData,
-      weightData,
-    })
-
-  } catch (err: any) {
-    console.error('Chat API error:', err)
-    return NextResponse.json({
-      reply: 'Something went wrong. Try again.',
-      error: err.message,
-      logData: null, logDataArray: [], recipeData: null, weightData: null
-    }, { status: 500 })
+  } catch (error: any) {
+    console.error('Chat API error:', error)
+    return NextResponse.json({ response: 'Something went wrong. Try again.' }, { status: 500 })
   }
 }

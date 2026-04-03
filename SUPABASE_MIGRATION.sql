@@ -1,135 +1,136 @@
--- FuelTrack 365 — Supabase Migration
--- Run this in: https://supabase.com/dashboard/project/laayhugawivxyphystpj/sql/new
--- All tables use Row Level Security. Users can only access their own data.
+-- FuelTrack 365 v2.0 Migration
+-- Safe to run multiple times (IF NOT EXISTS everywhere)
 
--- ─── food_entries ──────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS food_entries (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  date TEXT NOT NULL,  -- YYYY-MM-DD
-  meal_slot TEXT DEFAULT 'log',
-  name TEXT NOT NULL,
-  serving TEXT DEFAULT '1 serving',
-  calories NUMERIC DEFAULT 0,
-  protein NUMERIC DEFAULT 0,
-  carbs NUMERIC DEFAULT 0,
-  fat NUMERIC DEFAULT 0,
-  fiber NUMERIC DEFAULT 0,
-  sodium NUMERIC DEFAULT 0,
-  category TEXT DEFAULT 'food',  -- 'food' or 'drink'
-  created_at TIMESTAMPTZ DEFAULT now()
+-- Water tracking
+CREATE TABLE IF NOT EXISTS water_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  amount_oz INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_water_user_date ON water_entries(user_id, date);
+ALTER TABLE water_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own water" ON water_entries;
+CREATE POLICY "Users manage own water" ON water_entries FOR ALL USING (auth.uid() = user_id);
 
-ALTER TABLE food_entries ENABLE ROW LEVEL SECURITY;
+-- Weight tracking
+CREATE TABLE IF NOT EXISTS weight_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  weight DECIMAL(5,1) NOT NULL,
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_weight_user_date ON weight_entries(user_id, date);
+ALTER TABLE weight_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own weight" ON weight_entries;
+CREATE POLICY "Users manage own weight" ON weight_entries FOR ALL USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Users can manage their own food entries" ON food_entries;
-CREATE POLICY "Users can manage their own food entries" ON food_entries
-  FOR ALL USING (auth.uid() = user_id);
+-- User goals (editable macro targets)
+CREATE TABLE IF NOT EXISTS user_goals (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id),
+  calories INTEGER DEFAULT 1650,
+  protein INTEGER DEFAULT 200,
+  carbs INTEGER DEFAULT 140,
+  fat INTEGER DEFAULT 40,
+  fiber INTEGER DEFAULT 33,
+  sodium INTEGER DEFAULT 2000,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE user_goals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own goals" ON user_goals;
+CREATE POLICY "Users manage own goals" ON user_goals FOR ALL USING (auth.uid() = user_id);
 
--- ─── food_library ──────────────────────────────────────────────────────────
+-- Profile change log
+CREATE TABLE IF NOT EXISTS profile_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  field TEXT NOT NULL,
+  old_value TEXT NOT NULL,
+  new_value TEXT NOT NULL,
+  reason TEXT DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_changes_user ON profile_changes(user_id, created_at DESC);
+ALTER TABLE profile_changes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own changes" ON profile_changes;
+CREATE POLICY "Users manage own changes" ON profile_changes FOR ALL USING (auth.uid() = user_id);
 
+-- Food library (saved foods for quick access)
 CREATE TABLE IF NOT EXISTS food_library (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
   name TEXT NOT NULL,
-  serving_size TEXT DEFAULT '1 serving',
-  calories NUMERIC DEFAULT 0,
-  protein NUMERIC DEFAULT 0,
-  carbs NUMERIC DEFAULT 0,
-  fat NUMERIC DEFAULT 0,
-  fiber NUMERIC DEFAULT 0,
-  sodium NUMERIC DEFAULT 0,
-  source TEXT DEFAULT 'user',
+  serving_size TEXT DEFAULT '',
+  calories INTEGER DEFAULT 0,
+  protein INTEGER DEFAULT 0,
+  carbs INTEGER DEFAULT 0,
+  fat INTEGER DEFAULT 0,
+  fiber INTEGER DEFAULT 0,
+  sodium INTEGER DEFAULT 0,
   times_logged INTEGER DEFAULT 1,
-  last_logged TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, name)
 );
-
+CREATE INDEX IF NOT EXISTS idx_library_user ON food_library(user_id, times_logged DESC);
 ALTER TABLE food_library ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own library" ON food_library;
+CREATE POLICY "Users manage own library" ON food_library FOR ALL USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Users can manage their own food library" ON food_library;
-CREATE POLICY "Users can manage their own food library" ON food_library
-  FOR ALL USING (auth.uid() = user_id);
-
--- ─── recipes ───────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS recipes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  name TEXT NOT NULL,
-  servings INTEGER DEFAULT 6,
-  macros_per_serving JSONB DEFAULT '{}',
-  ingredients JSONB DEFAULT '[]',
-  steps JSONB DEFAULT '[]',
-  cooking_method TEXT,
-  cuisine TEXT,
-  tags TEXT[] DEFAULT '{}',
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can manage their own recipes" ON recipes;
-CREATE POLICY "Users can manage their own recipes" ON recipes
-  FOR ALL USING (auth.uid() = user_id);
-
--- ─── chat_messages ─────────────────────────────────────────────────────────
-
+-- Chat messages (conversation history)
 CREATE TABLE IF NOT EXISTS chat_messages (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  role TEXT NOT NULL,  -- 'user' or 'assistant'
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
+CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id, created_at DESC);
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users manage own chat" ON chat_messages;
+CREATE POLICY "Users manage own chat" ON chat_messages FOR ALL USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Users can manage their own chat messages" ON chat_messages;
-CREATE POLICY "Users can manage their own chat messages" ON chat_messages
-  FOR ALL USING (auth.uid() = user_id);
+-- Ensure food_entries has category column
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'food_entries' AND column_name = 'category') THEN
+    ALTER TABLE food_entries ADD COLUMN category TEXT DEFAULT 'snack';
+  END IF;
+END $$;
 
--- Service role can also access (for server-side API writes)
-DROP POLICY IF EXISTS "Service role access to chat_messages" ON chat_messages;
-CREATE POLICY "Service role access to chat_messages" ON chat_messages
-  FOR ALL TO service_role USING (true);
+-- Ensure recipes table has all needed columns
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'fiber_per_serving') THEN
+    ALTER TABLE recipes ADD COLUMN fiber_per_serving INTEGER DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'sodium_per_serving') THEN
+    ALTER TABLE recipes ADD COLUMN sodium_per_serving INTEGER DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'tags') THEN
+    ALTER TABLE recipes ADD COLUMN tags TEXT DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'protein_type') THEN
+    ALTER TABLE recipes ADD COLUMN protein_type TEXT DEFAULT '';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'recipes' AND column_name = 'carb_type') THEN
+    ALTER TABLE recipes ADD COLUMN carb_type TEXT DEFAULT '';
+  END IF;
+END $$;
 
--- ─── weight_log ────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS weight_log (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  date TEXT NOT NULL,  -- YYYY-MM-DD
-  weight NUMERIC NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(user_id, date)
-);
-
-ALTER TABLE weight_log ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can manage their own weight log" ON weight_log;
-CREATE POLICY "Users can manage their own weight log" ON weight_log
-  FOR ALL USING (auth.uid() = user_id);
-
--- ─── profiles (for editable macro goals) ────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS profiles (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
-  goals JSONB DEFAULT '{"calories":1650,"protein":200,"carbs":140,"fat":40,"fiber":32,"sodium":2000}',
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Users can manage their own profile" ON profiles;
-CREATE POLICY "Users can manage their own profile" ON profiles
-  FOR ALL USING (auth.uid() = user_id);
-
--- ─── Indexes ────────────────────────────────────────────────────────────────
-
-CREATE INDEX IF NOT EXISTS idx_food_entries_user_date ON food_entries(user_id, date);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_user ON chat_messages(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_weight_log_user_date ON weight_log(user_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_recipes_user ON recipes(user_id);
+-- Materialized daily totals view for performance
+CREATE OR REPLACE VIEW daily_totals AS
+SELECT
+  user_id,
+  date,
+  SUM(calories) as total_calories,
+  SUM(protein) as total_protein,
+  SUM(carbs) as total_carbs,
+  SUM(fat) as total_fat,
+  SUM(fiber) as total_fiber,
+  SUM(sodium) as total_sodium,
+  COUNT(*) as entry_count
+FROM food_entries
+GROUP BY user_id, date;
