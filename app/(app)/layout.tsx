@@ -61,13 +61,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Parallel data fetch
   const fetchAll = useCallback(async () => {
     if (!user) return
+    try {
     const today = viewingDate
     const weekAgo = new Date(new Date(today).getTime() - 7 * 86400000).toISOString().split('T')[0]
 
     const [entriesRes, waterRes, goalsRes, libRes, recRes, recentRes] = await Promise.all([
       supabase.from('food_entries').select('*').eq('user_id', user.id).eq('date', today).order('created_at'),
       supabase.from('water_entries').select('amount_oz').eq('user_id', user.id).eq('date', today),
-      supabase.from('user_goals').select('*').eq('user_id', user.id).single(),
+      supabase.from('user_goals').select('*').eq('user_id', user.id).limit(1),
       supabase.from('food_library').select('*').eq('user_id', user.id).order('times_logged', { ascending: false }).limit(30),
       supabase.from('recipes').select('*').eq('user_id', user.id).order('name'),
       supabase.from('food_entries').select('*').eq('user_id', user.id).gte('date', weekAgo).order('created_at', { ascending: false }),
@@ -75,14 +76,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     setEntries(entriesRes.data || [])
     setWaterOz((waterRes.data || []).reduce((s: number, e: any) => s + (e.amount_oz || 0), 0))
-    if (goalsRes.data) {
+    const goalsRow = goalsRes.data && goalsRes.data.length > 0 ? goalsRes.data[0] : null;
+    if (goalsRow) {
       setGoals({
-        calories: goalsRes.data.calories || DEFAULT_GOALS.calories,
-        protein: goalsRes.data.protein || DEFAULT_GOALS.protein,
-        carbs: goalsRes.data.carbs || DEFAULT_GOALS.carbs,
-        fat: goalsRes.data.fat || DEFAULT_GOALS.fat,
-        fiber: goalsRes.data.fiber || DEFAULT_GOALS.fiber,
-        sodium: goalsRes.data.sodium || DEFAULT_GOALS.sodium,
+        calories: goalsRow.calories || DEFAULT_GOALS.calories,
+        protein: goalsRow.protein || DEFAULT_GOALS.protein,
+        carbs: goalsRow.carbs || DEFAULT_GOALS.carbs,
+        fat: goalsRow.fat || DEFAULT_GOALS.fat,
+        fiber: goalsRow.fiber || DEFAULT_GOALS.fiber,
+        sodium: goalsRow.sodium || DEFAULT_GOALS.sodium,
       })
     }
     setLibrary(libRes.data || [])
@@ -93,6 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const freq: Record<string, number> = {}
     ;(recentRes.data || []).forEach((e: any) => { freq[e.name] = (freq[e.name] || 0) + 1 })
     setFrequents(Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name]) => name))
+    } catch (e) { console.error("fetchAll error:", e) }
   }, [user, viewingDate])
 
   useEffect(() => { fetchAll() }, [fetchAll])
